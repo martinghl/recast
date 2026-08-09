@@ -1,5 +1,50 @@
-"""Transitional placeholder — real implementation lands in Task 4."""
+"""Result container + AnnData/label/marker IO (torch-free core)."""
+from dataclasses import dataclass, field
+import numpy as np
+import pandas as pd
 
-
+@dataclass
 class AttributionResult:
-    pass
+    attribution: pd.DataFrame            # index = genes, columns = attributed states
+    genes: dict                          # state -> list[str] ranked genes (desc)
+    meta: dict = field(default_factory=dict)
+    def top(self, state, k=20):
+        return self.genes[state][:k]
+
+def read_h5ad(path):
+    import anndata
+    return anndata.read_h5ad(path)
+
+def resolve_labels(adata, cluster_key):
+    if isinstance(cluster_key, str) and cluster_key.endswith(".txt"):
+        return np.array([l.strip() for l in open(cluster_key) if l.strip()])
+    return adata.obs[cluster_key].astype(str).to_numpy()
+
+def write_markers(result, path_prefix):
+    rows = []
+    for state, genes in result.genes.items():
+        col = result.attribution[state]
+        for rank, g in enumerate(genes, 1):
+            rows.append((state, rank, g, float(col.get(g, np.nan))))
+    df = pd.DataFrame(rows, columns=["state", "rank", "gene", "score"])
+    df.to_csv(f"{path_prefix}_markers.csv", index=False)
+    return df
+
+def write_attribution(result, path):
+    import anndata
+    A = result.attribution
+    ad = anndata.AnnData(np.zeros((1, A.shape[0]), dtype="float32"))
+    ad.var_names = A.index.astype(str)
+    ad.varm["focal_attribution"] = A.to_numpy().astype("float32")
+    ad.uns["focal_states"] = list(map(str, A.columns))
+    ad.uns["focal_genes"] = {k: list(map(str, v)) for k, v in result.genes.items()}
+    ad.uns["focal_meta"] = {k: str(v) for k, v in result.meta.items()}
+    ad.write_h5ad(path)
+
+def read_attribution(path):
+    import anndata
+    ad = anndata.read_h5ad(path)
+    A = pd.DataFrame(ad.varm["focal_attribution"], index=ad.var_names.astype(str),
+                     columns=list(ad.uns["focal_states"]))
+    genes = {k: list(v) for k, v in ad.uns["focal_genes"].items()}
+    return AttributionResult(A, genes, dict(ad.uns.get("focal_meta", {})))
