@@ -1,30 +1,36 @@
 """focal attribute | composite command-line interface (thin over the library)."""
 import argparse
 
-def _encoder(name, model, n_genes):
+def _encoder(name, model, n_genes, adata=None):
     if name == "stub":
         from .encoders import StubEncoder
         return StubEncoder(n_genes)
     from . import encoders
-    cls = {"scimilarity": encoders.SCimilarityEncoder, "ssl": encoders.SSLEncoder, "scvi": encoders.SCVIEncoder}[name]
-    return cls(model)
+    if name == "scvi":
+        import scvi
+        return encoders.SCVIEncoder(scvi.model.SCVI.load(model, adata=adata))
+    return {"scimilarity": encoders.SCimilarityEncoder, "ssl": encoders.SSLEncoder}[name](model)
 
 def _cmd_attribute(a):
     from .io import read_h5ad, write_attribution
     from .attribute import attribute
     adata = read_h5ad(a.h5ad)
-    enc = _encoder(a.encoder, a.model, adata.n_vars)
+    enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
     ref = a.reference if a.reference in ("siblings", "rest") else [s for s in a.reference.split(",")]
     res = attribute(enc, adata, a.cluster_key, target=a.target, reference=ref)
     write_attribution(res, a.out)
     return 0
 
 def _cmd_composite(a):
-    from .io import read_h5ad, read_attribution, write_markers
+    import pandas as pd
+    from .io import read_h5ad, read_attribution, write_markers, AttributionResult
     from .composite import composite
     adata = read_h5ad(a.h5ad); res = read_attribution(a.attr)
-    res.genes = composite(res, adata, a.cluster_key, mode=a.mode)
-    write_markers(res, a.out_prefix)
+    ranked = composite(res, adata, a.cluster_key, mode=a.mode, return_scores=True)  # {state: [(gene, score), ...]}
+    genes_order = {s: [g for g, _ in gs] for s, gs in ranked.items()}
+    attr2 = pd.DataFrame({s: {g: sc for g, sc in gs} for s, gs in ranked.items()}).reindex(res.attribution.index)
+    out = AttributionResult(attr2, genes_order, {**res.meta, "composite_mode": a.mode})
+    write_markers(out, a.out_prefix)
     return 0
 
 def main(argv=None):

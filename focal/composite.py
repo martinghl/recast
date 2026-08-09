@@ -25,7 +25,7 @@ def _factors(logexpr, labels, states):
         dru[s] = d
     return tau, disc, dru
 
-def composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None):
+def composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False):
     if mode not in _MODES:
         raise ValueError(f"mode must be one of {_MODES}")
     labels = resolve_labels(adata, cluster_key)
@@ -44,5 +44,9 @@ def composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None):
         w = {"bare": a, "tauE": ap * tau, "discr": ap * disc[s], "discrRU": ap * dru[s],
              "tauE_discr": ap * tau * disc[s], "tauE_discrRU": ap * tau * dru[s]}[mode]
         score = np.where(a > 0, w, -np.inf)
-        out[s] = [genes[j] for j in np.argsort(-score)]
+        order = np.argsort(-score)
+        if return_scores:
+            out[s] = [(genes[j], float(w[j])) for j in order]   # (gene, weighted score) in ranked order
+        else:
+            out[s] = [genes[j] for j in order]
     return out
