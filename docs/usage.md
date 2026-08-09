@@ -1,0 +1,162 @@
+# FOCAL usage reference
+
+This is the detailed reference for encoders, reference modes, the composite
+readout modes, and the Python/CLI surfaces. For the conceptual "what and why," see the
+[README](../README.md).
+
+## Pipeline recap
+
+`focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None)`
+returns an `AttributionResult`:
+
+- For each target state, embeds the target cells and the reference cells with `enc`,
+  takes the L2-normalized difference of their mean embeddings as the contrast direction
+  `u`.
+- Builds the target's denoised pseudobulk centroid: `log1p(1e4 * gene_total /
+  total_counts)` over the target cells.
+- Runs Integrated Gradients (zero baseline) on `f(x) = <enc.torch_encode(x), u>`
+  evaluated at the centroid, producing one attribution value per gene.
+- Ranks genes by attribution descending, but only within the **positive channel**:
+  genes with attribution `<= 0` are excluded from `result.genes[state]` (pushed to the
+  end, tied at `-inf`) — they argue for the reference direction, not the target.
+
+`result.attribution` is a `genes x attributed_states` `DataFrame` of the raw
+(unranked, signed) attribution values; `result.genes` is `{state: [gene, ...]}` already
+sorted; `result.top(state, k=20)` is `result.genes[state][:k]`.
+
+## Encoders
+
+All encoder classes live in `focal.encoders` and require `pip install
+".[attribution]"` (the module imports `torch` unconditionally — this is true even for
+`StubEncoder`). Each implements `.embed(counts) -> np.ndarray` (expected L2-normalized,
+`(n_cells, n_latent)`) and `.torch_encode(x) -> Tensor` (the differentiable path IG runs
+through); `.centroid_module()` wraps `.torch_encode` into the 2-channel `nn.Module`
+Captum's `IntegratedGradients` attributes through.
+
+| Class | Constructor | Backing package | Notes |
+|---|---|---|---|
+| `StubEncoder` | `StubEncoder(n_genes, W=None)` | none (pure torch/numpy) | Deterministic identity-ish encoder: `embed = L2_normalize(log1p(X) @ W)`, `W` defaults to the identity matrix. Used by the test suite and `examples/demo.py`; not a real FM. |
+| `SCimilarityEncoder` | `SCimilarityEncoder(model_path)` | `scimilarity` (genentech/scimilarity `CellEmbedding`) | `model_path` is a directory containing `encoder.ckpt` / `gene_order.tsv` / `layer_sizes.json` / `label_ints.csv`. Raises `FileNotFoundError` if the path doesn't exist. |
+| `SSLEncoder` | `SSLEncoder(model_path)` | SIGnature's `SSLWrapper` (scTab/PBMC SSL-MLP) | SIGnature is **not** one of the `[attribution]` extras — it must already be importable, or set `FOCAL_SIGNATURE_SRC` to a checkout path and it's prepended to `sys.path` at construction time. `.embed()` batches through the reconstructed MLP directly (`SSLWrapper` exposes no `.embed()` of its own), `batch_size=512` by default. |
+| `SCVIEncoder` | `SCVIEncoder(model_or_adata)` | `scvi-tools` | Must be given an **already-trained** `scvi.model.SCVI` instance (raises `ValueError` otherwise — it will not train one for you). `.embed()` returns `get_latent_representation()`; `.torch_encode()` applies `log1p` first iff the module was trained with `log_variational` (the scvi-tools default), then returns the `z_encoder`'s posterior mean. |
+
+The CLI's `--encoder scvi` path additionally resolves a `--model` *path* into a live
+model for you via `scvi.model.SCVI.load(model_path, adata=adata)` (using the same
+`AnnData` passed via `--h5ad`) before constructing `SCVIEncoder` — the Python API's
+`SCVIEncoder` itself always expects an already-loaded model object, not a path.
+
+## Reference modes
+
+`reference` (Python) / `--reference` (CLI), resolved by `focal.contrast.resolve_reference`:
+
+| Value | Meaning |
+|---|---|
+| `"siblings"` | All cells in `adata` whose label is **not** the target label(s). |
+| `"rest"` | Currently **identical** to `"siblings"` — both resolve to `~target_mask`. The two names are kept distinct for intent/readability, not because they behave differently today. If you want a narrower "siblings within a lineage" comparison, subset `adata` to that lineage before calling `attribute()`. |
+| `list` / `tuple` / `set` of labels (CLI: comma-separated string, e.g. `B,DC`) | Only cells whose label is in that explicit set. **Not** automatically disjoint from the target — if you list the target's own label as a reference label too, it will be used as both target and reference cells. Exclude it yourself. |
+
+`target` (Python) / `--target` (CLI) accepts a single label, a list of labels, or
+(Python-only default / CLI: omit the flag) `None`, meaning "attribute every unique
+label found in `cluster_key`, one at a time, each against its own resolved reference."
+
+Both `target_mask` and the resolved `ref_mask` must be non-empty, or
+`resolve_reference` raises `ValueError("empty target or reference set")` — this fires
+if the target label doesn't exist in `adata`, or an explicit reference list matches no
+cells.
+
+`cluster_key` is normally a column name in `adata.obs`. As a convenience, if
+`cluster_key` is a string ending in `.txt`, it's instead treated as a path to a
+plain-text file of one label per line (aligned by row order to `adata`'s cells) —
+this path exists in `focal.io.resolve_labels` but is not covered by the test suite, so
+treat it as unverified if you rely on it.
+
+## Composite modes
+
+`focal.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None,
+return_scores=False)` reweights the **positive-channel** attribution
+(`ap = max(attribution, 0)`) by per-gene expression-specificity and/or
+discriminativeness factors computed from `adata` (or `adata.layers[layer]` if given),
+which are expected to already be log-normalized expression (the code's internal
+variable is literally named `logexpr`). Genes with non-positive raw attribution are
+always ranked last, regardless of mode.
+
+The specificity/discriminativeness factors are computed once, over **every** unique
+label in `cluster_key` across the whole `adata` (not just the state(s) present in
+`result`) — so `composite()` needs at least 2 distinct labels in `adata`, for *every*
+mode, even `"bare"` (the Tau computation requires `>= 2` clusters and runs
+unconditionally before the mode is selected).
+
+| Mode | Weight (before positive-channel gating) | What it rewards |
+|---|---|---|
+| `bare` | `attribution` (raw, unweighted) | Nothing extra — pure FOCAL attribution. |
+| `tauE` | `ap * tau` | Expression specificity: genes expressed narrowly in this state (Tau index, 0=ubiquitous .. 1=exclusive) score higher. |
+| `discr` | `ap * discr` | One-vs-rest discriminativeness: rescaled Mann-Whitney AUC of this state's expression vs. every other cell pooled. |
+| `discrRU` | `ap * discrRU` | Discriminativeness against the single hardest **runner-up** state (the other state with the next-highest mean expression of that gene), instead of vs. all other cells pooled — stricter than `discr` when one specific competitor state is the real confusion risk. |
+| `tauE_discr` | `ap * tau * discr` | Specificity **and** one-vs-rest discriminativeness combined. |
+| `tauE_discrRU` (default) | `ap * tau * discrRU` | Specificity **and** runner-up discriminativeness combined — the strictest readout, and the default for both the Python API and the CLI. |
+
+Where, per gene:
+
+- `tau` = Tau specificity index (`focal.stats.tauE`) over the `(n_states, n_genes)`
+  matrix of per-state mean log-expression.
+- `discr[s]` = `max(0, 2 * mw_auc(expr in state s, expr in all other cells) - 1)`.
+- `discrRU[s]` = same rescaled-AUC formula, but computed only against the cells of that
+  gene's specific runner-up state (the non-`s` state with the highest mean expression of
+  that gene), not all other cells pooled.
+
+`return_scores=True` returns `{state: [(gene, weighted_score), ...]}` instead of
+`{state: [gene, ...]}` — this is what the CLI uses internally so the markers CSV's
+`score` column reflects the mode-weighted composite score (not the raw attribution)
+after `focal composite`.
+
+**Alignment gotcha:** `composite()` does not re-align genes by name. It assumes
+`result.attribution.index` and `adata.var_names` refer to the same genes **in the same
+order** (true by construction if `adata` is the same object used to produce `result`
+via `attribute()`). Passing a differently-ordered or differently-subsetted `adata` will
+silently misattribute weights to the wrong genes rather than raising an error; passing
+one with a different gene *count* will raise a shape-mismatch error instead. Likewise,
+every state key in `result.genes` must exist among `adata.obs[cluster_key]`'s labels,
+or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
+
+## Python API reference
+
+- `focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None) -> AttributionResult`
+  — `device` defaults to `"cuda"` if available, else `"cpu"`. Requires `[attribution]`.
+- `focal.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False) -> dict`
+  — core-only, no torch.
+- `focal.AttributionResult` — dataclass: `attribution: pd.DataFrame`, `genes: dict`,
+  `meta: dict`, `.top(state, k=20)`.
+- `focal.io.read_h5ad(path)`, `focal.io.write_attribution(result, path)`,
+  `focal.io.read_attribution(path)` — round-trip an `AttributionResult` through an
+  `.h5ad` (`varm["focal_attribution"]`, `uns["focal_states"/"focal_genes"/"focal_meta"]`).
+- `focal.io.write_markers(result, path_prefix) -> pd.DataFrame` — writes
+  `{path_prefix}_markers.csv` with columns `state, rank, gene, score` (`score` is
+  whatever's in `result.attribution` at call time — raw attribution for a result fresh
+  out of `attribute()`, or the composite-weighted score if you assembled `result` from
+  `composite(..., return_scores=True)` first, as the CLI does).
+- `focal.encoders.{Encoder, StubEncoder, SCimilarityEncoder, SSLEncoder, SCVIEncoder}`
+  — see Encoders above. Requires `[attribution]`.
+
+## CLI reference
+
+```
+focal attribute --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
+                 --cluster-key KEY [--target LABEL] [--reference siblings|rest|A,B,...]
+                 --out PATH
+
+focal composite --attr PATH --h5ad PATH --cluster-key KEY
+                 [--mode {bare,tauE,discr,discrRU,tauE_discr,tauE_discrRU}]
+                 --out-prefix PREFIX
+```
+
+- `focal attribute` reads `--h5ad`, builds the requested encoder, runs `attribute()`,
+  and writes the full `AttributionResult` to `--out` (an `.h5ad`). `--model` is
+  required in practice for every encoder except `stub` (omitting it surfaces as
+  `FileNotFoundError`/`ValueError` from that encoder's constructor, not a friendlier
+  argparse-level error). `--reference` defaults to `siblings`.
+- `focal composite` reads `--attr` (from a prior `focal attribute` run) and `--h5ad`,
+  runs `composite(..., return_scores=True)`, and writes only
+  `<out-prefix>_markers.csv` (it does not write a new `.h5ad`). `--mode` defaults to
+  `tauE_discrRU`.
+- Both subcommands return `0` on success (see `focal.cli.main`); there is currently no
+  non-zero exit path other than an uncaught exception from inside the library.
