@@ -23,11 +23,13 @@ explicit, per gene:
    the centroid) on the scalar `f(x) = <encoder(x), u>` — i.e. attribute *how much
    each gene's expression in the centroid pushes the embedding along the target
    direction*.
-4. **Positive channel only.** Genes with positive attribution are the ones whose
-   expression argues *for* the target over the reference — these are reported, ranked,
-   as the state-defining genes. Genes with negative or zero attribution (they argue for
-   the reference, or don't move the embedding) are dropped from the ranked list rather
-   than reported as "anti-markers."
+4. **Positive channel, ranked first.** Genes with positive attribution are the ones
+   whose expression argues *for* the target over the reference — the ranking puts
+   these first, as the state-defining genes. Genes with negative or zero attribution
+   (they argue for the reference, or don't move the embedding) are not dropped: the
+   full gene list is always returned, with these ranked last, rather than reported as
+   "anti-markers." Callers take a top-k prefix (or just the positive-scoring genes) as
+   the markers.
 
 This is a different question than what two more familiar baselines answer. Attributing
 a state's embedding on its own, with no contrastive reference ("native IG"), tends to
@@ -93,7 +95,7 @@ import focal
 enc = focal.SCimilarityEncoder(os.environ["FOCAL_MODEL_DIR"])
 
 res = focal.attribute(enc, adata, cluster_key="state", target="CX3CR1+ CD8", reference="siblings")
-res.genes["CX3CR1+ CD8"]        # ranked gene list, positive-channel only
+res.genes["CX3CR1+ CD8"]        # full ranked gene list; positive-attribution genes first
 res.attribution                 # DataFrame: genes x attributed states, raw IG scores
 
 mk = focal.composite(res, adata, "state", mode="tauE_discrRU")

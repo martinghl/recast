@@ -9,8 +9,9 @@ Initial FOCAL package.
   L2-normalized mean-embedding difference as a contrast direction `u`, build a
   denoised pseudobulk centroid (`log1p(1e4 * proportion)`) of the target cells, and
   run Integrated Gradients (Captum, zero baseline) on `<encoder(x), u>` to get one
-  attribution value per gene. Genes are ranked positive-channel-only (attribution
-  <= 0 excluded) so the output is state-defining genes, not raw scores.
+  attribution value per gene. Every gene is ranked, descending by attribution, with
+  attribution `<= 0` genes always sorted last rather than excluded — so the top of the
+  ranking is state-defining genes, not just raw scores.
 - **Composite (`focal.composite`)**: optional marker-specialization readout layer with
   6 modes (`bare`, `tauE`, `discr`, `discrRU`, `tauE_discr`, `tauE_discrRU`, default)
   that reweight the positive attribution by expression-specificity (vendored Tau

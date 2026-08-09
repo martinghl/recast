@@ -16,9 +16,11 @@ returns an `AttributionResult`:
   total_counts)` over the target cells.
 - Runs Integrated Gradients (zero baseline) on `f(x) = <enc.torch_encode(x), u>`
   evaluated at the centroid, producing one attribution value per gene.
-- Ranks genes by attribution descending, but only within the **positive channel**:
-  genes with attribution `<= 0` are excluded from `result.genes[state]` (pushed to the
-  end, tied at `-inf`) — they argue for the reference direction, not the target.
+- Ranks **every** gene by attribution descending — `result.genes[state]` always
+  contains all of `adata.var_names`, not just positive-attribution ones. Genes with
+  attribution `<= 0` are ranked last (not dropped) because they argue for the
+  reference direction, not the target; callers take a top-k prefix (e.g.
+  `result.top(state, k)`) to get "the markers."
 
 `result.attribution` is a `genes x attributed_states` `DataFrame` of the raw
 (unranked, signed) attribution values; `result.genes` is `{state: [gene, ...]}` already
@@ -55,9 +57,14 @@ model for you via `scvi.model.SCVI.load(model_path, adata=adata)` (using the sam
 | `"rest"` | Currently **identical** to `"siblings"` — both resolve to `~target_mask`. The two names are kept distinct for intent/readability, not because they behave differently today. If you want a narrower "siblings within a lineage" comparison, subset `adata` to that lineage before calling `attribute()`. |
 | `list` / `tuple` / `set` of labels (CLI: comma-separated string, e.g. `B,DC`) | Only cells whose label is in that explicit set. **Not** automatically disjoint from the target — if you list the target's own label as a reference label too, it will be used as both target and reference cells. Exclude it yourself. |
 
-`target` (Python) / `--target` (CLI) accepts a single label, a list of labels, or
-(Python-only default / CLI: omit the flag) `None`, meaning "attribute every unique
-label found in `cluster_key`, one at a time, each against its own resolved reference."
+`target` (Python) accepts a single label, a list of labels, or `None` (attribute every
+unique label found in `cluster_key`, one at a time, each against its own resolved
+reference). `--target` (CLI) is **single-label only**: `cli._cmd_attribute` passes
+`a.target` straight through to `attribute()` without splitting on commas (unlike
+`--reference`, which does split), so `--target A,B` is used as one literal label
+`"A,B"`, not two targets — it will raise `ValueError("empty target or reference set")`
+unless some state is actually named `"A,B"`. The list-of-labels form of `target` is
+Python-API only. Omit `--target` on the CLI to attribute every state.
 
 Both `target_mask` and the resolved `ref_mask` must be non-empty, or
 `resolve_reference` raises `ValueError("empty target or reference set")` — this fires
@@ -151,9 +158,14 @@ focal composite --attr PATH --h5ad PATH --cluster-key KEY
 
 - `focal attribute` reads `--h5ad`, builds the requested encoder, runs `attribute()`,
   and writes the full `AttributionResult` to `--out` (an `.h5ad`). `--model` is
-  required in practice for every encoder except `stub` (omitting it surfaces as
-  `FileNotFoundError`/`ValueError` from that encoder's constructor, not a friendlier
-  argparse-level error). `--reference` defaults to `siblings`.
+  required in practice for every encoder except `stub` (omitting it surfaces as a
+  failure rather than a friendlier argparse-level error, but *where* it surfaces
+  differs by encoder: for `scimilarity`/`ssl`, `--model`/`None` is passed straight to
+  that encoder's own constructor, which raises `FileNotFoundError`; for `scvi`,
+  `cli._encoder` calls `scvi.model.SCVI.load(model, adata=...)` *before* ever
+  constructing `SCVIEncoder`, so the failure is whatever `scvi`'s own loader raises for
+  a bad/missing path — typically a `ValueError` from `scvi` itself, not
+  `SCVIEncoder.__init__`'s `ValueError`). `--reference` defaults to `siblings`.
 - `focal composite` reads `--attr` (from a prior `focal attribute` run) and `--h5ad`,
   runs `composite(..., return_scores=True)`, and writes only
   `<out-prefix>_markers.csv` (it does not write a new `.h5ad`). `--mode` defaults to
