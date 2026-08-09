@@ -1,5 +1,13 @@
-def test_version_and_torchfree_import():
+def test_version():
     import focal
     assert focal.__version__ == "0.1.0"
-    import sys
-    assert "torch" not in sys.modules, "importing focal must not pull in torch"
+
+
+def test_torchfree_import():
+    """`import focal` in a clean interpreter must not pull in torch."""
+    import subprocess, sys
+    r = subprocess.run(
+        [sys.executable, "-c", "import focal, sys; assert 'torch' not in sys.modules, 'focal imported torch'"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, f"torch-free import failed:\nSTDOUT: {r.stdout}\nSTDERR: {r.stderr}"
