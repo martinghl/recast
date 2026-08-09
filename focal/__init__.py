@@ -1,0 +1,17 @@
+"""FOCAL — Foundation-model Contrastive Attribution."""
+__version__ = "0.1.0"
+
+from .io import AttributionResult
+from .composite import composite
+
+_LAZY = {"attribute": ".attribute", "SCimilarityEncoder": ".encoders", "SSLEncoder": ".encoders",
+         "SCVIEncoder": ".encoders", "StubEncoder": ".encoders", "Encoder": ".encoders"}
+
+def __getattr__(name):
+    if name in _LAZY:
+        import importlib
+        return getattr(importlib.import_module(_LAZY[name], __name__), name)
+    raise AttributeError(f"module 'focal' has no attribute {name!r}")
+
+__all__ = ["attribute", "composite", "SCimilarityEncoder", "SSLEncoder", "SCVIEncoder",
+           "AttributionResult", "__version__"]
