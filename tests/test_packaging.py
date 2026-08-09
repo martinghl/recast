@@ -11,3 +11,9 @@ def test_torchfree_import():
         capture_output=True, text=True,
     )
     assert r.returncode == 0, f"torch-free import failed:\nSTDOUT: {r.stdout}\nSTDERR: {r.stderr}"
+
+
+def test_python_m_focal_help():
+    import subprocess, sys
+    r = subprocess.run([sys.executable, "-m", "focal", "--help"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

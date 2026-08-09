@@ -18,7 +18,7 @@ def _attribute_one(enc, counts, target_mask, ref_mask, device):
     return att.detach().cpu().numpy().ravel()
 
 def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None):
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     labels = resolve_labels(adata, cluster_key)
     counts = adata.X
     genes = list(map(str, adata.var_names))

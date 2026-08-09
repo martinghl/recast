@@ -47,6 +47,21 @@ model for you via `scvi.model.SCVI.load(model_path, adata=adata)` (using the sam
 `AnnData` passed via `--h5ad`) before constructing `SCVIEncoder` — the Python API's
 `SCVIEncoder` itself always expects an already-loaded model object, not a path.
 
+### Device placement for real FM encoders
+
+`attribute(enc, adata, ..., device=None)` auto-selects `"cuda"` when a GPU is
+available, else `"cpu"`. **The encoder's underlying model and `device` must already
+be on the same device.** `centroid_module()` wraps the encoder's `torch_encode` in an
+`nn.Module` but registers no parameters of its own (it closes over `enc` rather than
+assigning it as a submodule), so moving that module to `device` does **not** move a
+real FM's weights. `SCimilarityEncoder`/`SSLEncoder`/`SCVIEncoder.torch_encode` all
+call straight into the underlying network with no device handling of their own, so a
+mismatch surfaces as a device error (or silently wrong placement) rather than being
+auto-corrected. For real FM encoders, either load the FM onto the device you intend to
+pass to `attribute()`, or pass `device="cpu"` / `device="cuda"` explicitly to match
+wherever the FM already lives. `StubEncoder` has no persistent weights of its own, so
+it's device-agnostic — the test suite and `examples/demo.py` are unaffected.
+
 ## Reference modes
 
 `reference` (Python) / `--reference` (CLI), resolved by `focal.contrast.resolve_reference`:
