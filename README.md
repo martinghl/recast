@@ -7,6 +7,19 @@ model's (FM's) embedding into a ranked list of marker genes for one cell state v
 a chosen reference. It has no dependency on, and is not an add-on or extension of, any
 other attribution or marker-gene tool.
 
+## Two ways to use it
+
+- **Single-file script, no install** — [`focal_standalone.py`](focal_standalone.py): the whole
+  method (core recipe + composite layer + all four encoders) flattened into one file. Just run it:
+  ```bash
+  python focal_standalone.py --h5ad raw.h5ad --encoder scimilarity --model <model_dir> \
+      --cluster-key state --target "CX3CR1+ CD8" --reference siblings --out markers.csv
+  ```
+  (`--encoder stub` needs no weights — a smoke test; omit `--target` to do every state; add
+  `--composite tauE_discrRU` for the marker layer.) Writes a `state,rank,gene,score` CSV.
+- **Installable package** — `pip install .` (core) or `pip install ".[attribution]"` (adds the FM
+  encoders) for the `focal.attribute()` / `focal.composite()` Python API and the `focal` CLI; see below.
+
 ## What it is, and why
 
 Foundation models embed cells into a space where "what makes this state different from
