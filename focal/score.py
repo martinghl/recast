@@ -29,3 +29,20 @@ def score_gene_set_focal(enc, adata, cluster_key, gene_set, *, reference="rest",
                      "score_mean": s / len(present) if present else 0.0,
                      "score_frac": s / total if total > 0 else 0.0})
     return pd.DataFrame(rows)
+
+def score_gene_set_panel(enc, adata, cluster_key, gene_sets, *, reference="rest",
+                         composites=(None, "tauE_discrRU"), layer=None, device=None):
+    """Long-form df (variant, signature, cluster, n_genes_found, score_sum, score_mean, score_frac)
+    scoring every gene_set in `gene_sets` (name -> genes) across every composite variant in
+    `composites` (None -> "bare"). The cluster attribution is computed ONCE via cluster_attribution
+    and reused (via score_gene_set_focal's `_result` escape hatch) for every signature x variant."""
+    res = cluster_attribution(enc, adata, cluster_key, reference, device)   # ONE attribution pass
+    frames = []
+    for comp in composites:
+        vname = "bare" if comp is None else comp
+        for sig, genes in gene_sets.items():
+            df = score_gene_set_focal(enc, adata, cluster_key, genes, reference=reference,
+                                      composite=comp, layer=layer, device=device, _result=res)
+            df.insert(0, "signature", sig); df.insert(0, "variant", vname)
+            frames.append(df)
+    return pd.concat(frames, ignore_index=True)

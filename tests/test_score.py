@@ -1,7 +1,7 @@
 import numpy as np, pandas as pd, anndata as ad
 from focal.encoders import StubEncoder
 from focal.io import AttributionResult
-from focal.score import score_gene_set_focal
+from focal.score import score_gene_set_focal, score_gene_set_panel
 
 def _planted():
     """3 clusters (not 2): A over-expresses g0,g1 ; B over-expresses g3,g4 ; C over-expresses g2,g5.
@@ -63,3 +63,18 @@ def test_score_frac_zero_when_cluster_has_no_positive_mass():
     assert row.n_genes_found == 1
     assert row.score_sum == 0.0
     assert row.score_frac == 0.0
+
+def test_panel_shape_and_variants():
+    a = _planted(); enc = StubEncoder(a.n_vars)
+    panels = {"sigA": ["g0", "g1"], "sigB": ["g3", "g4"]}
+    df = score_gene_set_panel(enc, a, "state", panels, composites=(None, "tauE_discrRU"))
+    assert set(df["variant"]) == {"bare", "tauE_discrRU"}
+    assert set(df["signature"]) == {"sigA", "sigB"}
+    assert set(df["cluster"]) == {"A", "B", "C"}
+    # 2 variants * 2 signatures * 3 clusters (planted fixture has 3 clusters: A/B/C) = 12 rows
+    assert len(df) == 12
+    # planted: sigA peaks on cluster A, sigB peaks on cluster B (bare variant)
+    bare = df[df.variant == "bare"]
+    for sig, want in [("sigA", "A"), ("sigB", "B")]:
+        sub = bare[bare.signature == sig]
+        assert sub.loc[sub.score_sum.idxmax(), "cluster"] == want
