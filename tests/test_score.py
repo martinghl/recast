@@ -78,3 +78,15 @@ def test_panel_shape_and_variants():
     for sig, want in [("sigA", "A"), ("sigB", "B")]:
         sub = bare[bare.signature == sig]
         assert sub.loc[sub.score_sum.idxmax(), "cluster"] == want
+
+def test_cli_score_set(tmp_path):
+    import json, subprocess, sys
+    a = _planted(); h5 = tmp_path/"toy.h5ad"; a.write_h5ad(h5)
+    panels = tmp_path/"panels.json"; panels.write_text(json.dumps({"sigA": ["g0","g1"], "sigB": ["g3","g4"]}))
+    out = tmp_path/"scores.csv"
+    r = subprocess.run([sys.executable, "-m", "focal", "score-set", "--h5ad", str(h5),
+                        "--encoder", "stub", "--cluster-key", "state", "--gene-sets", str(panels),
+                        "--out", str(out)], capture_output=True, text=True, cwd="/data/gli9/test_sig/focal")
+    assert r.returncode == 0, r.stderr
+    import pandas as pd; df = pd.read_csv(out)
+    assert {"variant","signature","cluster","score_sum"} <= set(df.columns) and len(df) > 0
