@@ -1,6 +1,7 @@
 """Optional marker-specialization layer: reweight the POSITIVE FOCAL attribution by expression-specificity
 (tauE) and/or discriminativeness (discr / runner-up discrRU). Frozen from compute_fs_composite.py. Core (numpy)."""
 import numpy as np
+import pandas as pd
 import scipy.sparse as sp
 from .stats import tauE, mw_auc
 from .io import resolve_labels
@@ -25,28 +26,27 @@ def _factors(logexpr, labels, states):
         dru[s] = d
     return tau, disc, dru
 
-def composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False):
+def composite_weights(result, adata, cluster_key, mode="tauE_discrRU", layer=None):
     if mode not in _MODES:
         raise ValueError(f"mode must be one of {_MODES}")
     labels = resolve_labels(adata, cluster_key)
     X = adata.layers[layer] if layer else adata.X
     logexpr = np.asarray(X.todense(), dtype=float) if sp.issparse(X) else np.asarray(X, dtype=float)
-    genes = list(result.attribution.index)
-    # Use all unique states in data for computing specificity factors
     all_states = sorted(np.unique(labels))
-    # But only return output for states that have attribution
-    output_states = list(result.genes.keys())
     tau, disc, dru = _factors(logexpr, labels, all_states)
-    out = {}
-    for s in output_states:
-        a = result.attribution[s].to_numpy()
-        ap = np.maximum(a, 0.0)
-        w = {"bare": a, "tauE": ap * tau, "discr": ap * disc[s], "discrRU": ap * dru[s],
-             "tauE_discr": ap * tau * disc[s], "tauE_discrRU": ap * tau * dru[s]}[mode]
-        score = np.where(a > 0, w, -np.inf)
-        order = np.argsort(-score)
-        if return_scores:
-            out[s] = [(genes[j], float(w[j])) for j in order]   # (gene, weighted score) in ranked order
-        else:
-            out[s] = [genes[j] for j in order]
+    cols = {}
+    for s in result.genes.keys():
+        a = result.attribution[s].to_numpy(); ap = np.maximum(a, 0.0)
+        w = {"bare": ap, "tauE": ap*tau, "discr": ap*disc[s], "discrRU": ap*dru[s],
+             "tauE_discr": ap*tau*disc[s], "tauE_discrRU": ap*tau*dru[s]}[mode]
+        cols[s] = np.where(a > 0, w, 0.0)
+    return pd.DataFrame(cols, index=list(result.attribution.index))
+
+def composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False):
+    W = composite_weights(result, adata, cluster_key, mode=mode, layer=layer)
+    genes = list(W.index); out = {}
+    for s in result.genes.keys():
+        w = W[s].to_numpy(); a = result.attribution[s].to_numpy()
+        score = np.where(a > 0, w, -np.inf); order = np.argsort(-score)
+        out[s] = [(genes[j], float(w[j])) for j in order] if return_scores else [genes[j] for j in order]
     return out
