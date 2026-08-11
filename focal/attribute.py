@@ -40,4 +40,4 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
         order = np.argsort(-np.where(att > 0, att, -np.inf))
         ranked[s] = [genes[j] for j in order]
     return AttributionResult(pd.DataFrame(cols, index=genes), ranked,
-                             {"reference": reference, "n_genes": len(genes)})
+                             {"reference": reference, "n_genes": len(genes), "baseline": baseline})

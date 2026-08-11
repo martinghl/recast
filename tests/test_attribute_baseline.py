@@ -1,4 +1,5 @@
-import numpy as np, anndata as ad
+import numpy as np
+import pytest
 from focal.attribute import _attribute_one
 from focal.encoders import StubEncoder  # identity encoder, no weights
 
@@ -17,3 +18,8 @@ def test_reference_baseline_differs_from_zero_and_is_finite():
     assert a_zero.shape == a_ref.shape == (6,)
     assert np.all(np.isfinite(a_ref))
     assert not np.allclose(a_zero, a_ref)   # baseline choice changes φ
+
+def test_bad_baseline_raises():
+    X, tmask = _toy(); enc = StubEncoder(X.shape[1])
+    with pytest.raises(ValueError):
+        _attribute_one(enc, X, tmask, ~tmask, "cpu", baseline="bogus")
