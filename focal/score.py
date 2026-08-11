@@ -20,7 +20,7 @@ def score_gene_set_focal(enc, adata, cluster_key, gene_set, *, reference="rest",
                          composite=None, layer=None, device=None, _result=None):
     res = _result if _result is not None else cluster_attribution(enc, adata, cluster_key, reference, device)
     W = _weight_frame(res, adata, cluster_key, composite, layer)
-    present = [g for g in map(str, gene_set) if g in W.index]
+    present = list(dict.fromkeys(g for g in map(str, gene_set) if g in W.index))
     rows = []
     for c in W.columns:
         w = W[c]; total = float(w.clip(lower=0).sum())
