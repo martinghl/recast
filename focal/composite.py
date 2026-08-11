@@ -27,6 +27,21 @@ def _factors(logexpr, labels, states):
     return tau, disc, dru
 
 def composite_weights(result, adata, cluster_key, mode="tauE_discrRU", layer=None):
+    """Genes x output-states DataFrame of mode-weighted positive-channel phi (index=genes,
+    columns=result.genes.keys()). Every value is >= 0: for each state, genes with non-positive
+    raw attribution (a <= 0) are zeroed to 0.0, and for a > 0 genes the weight is
+    ap * <mode factor> (ap = max(a, 0); "bare" has no extra factor).
+
+    Caveat for callers who sort a returned column directly (e.g. via .sort_values()): a 0.0 in
+    this frame is ambiguous between (a) a gene gated out because a <= 0, and (b) a gene with
+    a > 0 whose mode factor (tau / disc / dru) happens to evaluate to exactly 0. Both look
+    identical here. composite() itself is unaffected by this ambiguity -- it re-derives ranking
+    from the original attribution, gating a <= 0 genes to -inf (not 0.0) before argsort, so a>0
+    genes always sort ahead of a<=0 genes regardless of their weight. A naive sort_values() on
+    this frame alone does not reconstruct that exact tie-order between the two zero-weight
+    groups; only composite()'s own ranked/scored output should be treated as authoritative for
+    full tie-broken rank order.
+    """
     if mode not in _MODES:
         raise ValueError(f"mode must be one of {_MODES}")
     labels = resolve_labels(adata, cluster_key)
