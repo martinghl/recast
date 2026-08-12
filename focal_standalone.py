@@ -8,8 +8,10 @@ foundation-model encoder, FOCAL returns the genes that DEFINE a target-vs-refere
   1. embed cells with the FM                      -> L2-normalized vectors
   2. contrast direction  u = normalize(mean(enc(target)) - mean(enc(reference)))
   3. denoised pseudobulk centroid  C = log1p(1e4 * per-gene proportion) of the target cluster
-  4. Integrated-Gradients attribute C through f(x) = <enc(x), u>, keeping the POSITIVE channel
-  5. rank genes by attribution   (optionally reweight with the composite marker layer)
+  4. Integrated-Gradients attribute C through f(x) = <enc(x), u>
+  5. rank genes by attribution, gated per target state (dC = pseudobulk(target)-pseudobulk(reference)
+     > 0 by default, i.e. the gene must be genuinely up-regulated -- --gate phi reproduces the legacy
+     attribution-sign gate)   (optionally reweight with the composite marker layer)
 
 Usage
 -----
@@ -36,6 +38,9 @@ Encoders:  stub | scimilarity | ssl | scvi
 --target    : a single state label; omit to attribute EVERY state vs its reference.
 --composite : omit for the raw FOCAL ranking, or one of
               bare | tauE | discr | discrRU | tauE_discr | tauE_discrRU  (marker-specialization layer).
+--gate      : "dC" (default, CORRECT: pseudobulk(target)-pseudobulk(reference) > 0 -- the gene must be
+              genuinely up-regulated) or "phi" (legacy: the attribution's own sign > 0 -- back-compat
+              escape hatch that lets a sign-mismatched, actually-down gene leak into the ranking).
 
 Note on devices: for real FMs the encoder's weights and --device must be on the SAME device; the IG
 wrapper does not move FM weights.  --device defaults to cuda if available, else cpu.
@@ -243,20 +248,32 @@ def resolve_labels(adata, cluster_key):
     return adata.obs[cluster_key].astype(str).to_numpy()
 
 
+GATES = ("dC", "phi")
+
+
 def _attribute_one(enc, counts, target_mask, ref_mask, device):
     u = contrast_direction(enc.embed(counts[target_mask]), enc.embed(counts[ref_mask]))
     C = pseudobulk_centroid(counts, target_mask)
+    C_ref = pseudobulk_centroid(counts, ref_mask)   # needed for the dC>0 gate (mirrors focal/attribute.py)
+    dC = C - C_ref
     x = torch.as_tensor(C[None], dtype=torch.float32, device=device).requires_grad_(True)
     ut = torch.as_tensor(u[None], dtype=torch.float32, device=device)
     ig = IntegratedGradients(enc.centroid_module().to(device))
     att = ig.attribute(x, target=0, additional_forward_args=(ut,), baselines=torch.zeros_like(x))
-    return att.detach().cpu().numpy().ravel()
+    return att.detach().cpu().numpy().ravel(), dC
 
 
-def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None):
-    """Returns (attribution_df: genes x states, genes_dict: state -> ranked gene list, meta)."""
+def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, gate="dC"):
+    """Returns (attribution_df: genes x states, genes_dict: state -> ranked gene list, meta).
+    gate: 'dC' (default, CORRECT) ranks genes by pseudobulk(target)-pseudobulk(reference) > 0 -- i.e.
+    the gene must be genuinely up-regulated in the target state, not merely have positive IG
+    attribution. 'phi' is the legacy rule (the attribution's own sign > 0), kept as a back-compat
+    escape hatch -- it lets a gene that's actually DOWN (dC<=0) but picks up positive attribution
+    (sign mismatch) leak into the ranked/composite output."""
     if torch is None:
         raise ImportError("attribute() needs torch + captum (pip install torch captum)")
+    if gate not in GATES:
+        raise ValueError(f"gate must be one of {GATES}, got {gate!r}")
     device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     labels = resolve_labels(adata, cluster_key)
     counts = adata.X
@@ -268,11 +285,12 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
     cols, ranked = {}, {}
     for s in states:
         tmask, rmask = resolve_reference(labels, s, reference)
-        att = _attribute_one(enc, counts, tmask, rmask, device)
+        att, dC = _attribute_one(enc, counts, tmask, rmask, device)
         cols[s] = att
-        order = np.argsort(-np.where(att > 0, att, -np.inf))     # positive channel: non-positive genes rank last
+        gate_vals = dC if gate == "dC" else att
+        order = np.argsort(-np.where(gate_vals > 0, att, -np.inf))   # dC>0 (default) or legacy att>0
         ranked[s] = [genes[j] for j in order]
-    meta = {"reference": reference, "n_genes": len(genes)}
+    meta = {"reference": reference, "n_genes": len(genes), "gate": gate}
     return pd.DataFrame(cols, index=genes), ranked, meta
 
 
@@ -363,6 +381,9 @@ def main(argv=None):
     ap.add_argument("--cluster-key", required=True, help="obs column with the state label (or a .txt of labels)")
     ap.add_argument("--target", default=None, help="a single state label; omit to attribute every state")
     ap.add_argument("--reference", default="siblings", help="'siblings' | 'rest' | comma-list of labels")
+    ap.add_argument("--gate", default="dC", choices=list(GATES),
+                    help="'dC' (default, correct: pseudobulk target-vs-reference > 0) or 'phi' "
+                         "(legacy attribution-sign gate, back-compat escape hatch)")
     ap.add_argument("--composite", default=None, choices=list(_COMPOSITE_MODES),
                     help="marker-specialization layer; omit for the raw FOCAL ranking")
     ap.add_argument("--composite-layer", default=None,
@@ -379,7 +400,8 @@ def main(argv=None):
     reference = args.reference if args.reference in ("siblings", "rest") else args.reference.split(",")
 
     attribution_df, genes_dict, meta = attribute(
-        enc, adata, args.cluster_key, target=args.target, reference=reference, device=args.device)
+        enc, adata, args.cluster_key, target=args.target, reference=reference, device=args.device,
+        gate=args.gate)
 
     if args.composite:
         scored = composite(attribution_df, genes_dict, adata, args.cluster_key,
@@ -389,7 +411,8 @@ def main(argv=None):
 
     df = write_markers(scored, args.out, top=args.top)
     tag = f"composite={args.composite}" if args.composite else "raw FOCAL"
-    print(f"[FOCAL] {len(genes_dict)} state(s), {tag}, ref={reference} -> {len(df)} rows in {args.out}")
+    print(f"[FOCAL] {len(genes_dict)} state(s), {tag}, gate={args.gate}, ref={reference} "
+          f"-> {len(df)} rows in {args.out}")
     for s in list(genes_dict)[:8]:
         print(f"   {s}: " + ", ".join(g for g, _ in scored[s][:8]))
     return 0

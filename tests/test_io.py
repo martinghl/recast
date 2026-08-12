@@ -19,6 +19,20 @@ def test_attribution_roundtrip(tmp_path):
     assert np.allclose(r2.attribution["S"].to_numpy(), r.attribution["S"].to_numpy())
     assert r.dC is None and r2.dC is None    # _toy() predates the dC>0 gate fix -> stays None round-trip
 
+def test_gate_array_warns_when_dC_gate_requested_but_dC_is_none():
+    """gate_array's fallback to the phi>0 gate when gate="dC" is requested but result.dC is None
+    (e.g. a legacy/hand-built AttributionResult, like _toy() above) must not be silent -- callers
+    need a RuntimeWarning so they notice they're getting the less-correct legacy gate instead of
+    the one they asked for. Goes through score_gene_set_focal's `_result=` escape hatch (no
+    attribute()/AnnData needed, same pattern as tests/test_score.py) so the warning is pinned at a
+    real call site (score.py's own `from .io import gate_array`), not just gate_array in isolation."""
+    import pytest
+    from focal.score import score_gene_set_focal
+    r = _toy()
+    assert r.dC is None
+    with pytest.warns(RuntimeWarning, match="dC gate requested but AttributionResult.dC is None"):
+        score_gene_set_focal(None, None, None, r.genes["S"], _result=r)   # default gate="dC"
+
 def test_attribution_roundtrip_persists_dC(tmp_path):
     """A result carrying dC (as attribute()/cluster_attribution() now always produce) must
     round-trip it through write_attribution/read_attribution, not silently drop it -- callers

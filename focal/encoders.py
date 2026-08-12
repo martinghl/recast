@@ -36,18 +36,28 @@ class StubEncoder(Encoder):
 
 class SCimilarityEncoder(Encoder):
     """SCimilarity contrastive encoder (genentech/scimilarity CellEmbedding). Expects the model dir
-    (containing encoder.ckpt / gene_order.tsv / layer_sizes.json / label_ints.csv)."""
-    def __init__(self, model_path):
+    (containing encoder.ckpt / gene_order.tsv / layer_sizes.json / label_ints.csv).
+
+    Input contract for .embed()/.torch_encode(): SCimilarity requires gene-space-aligned, per-cell
+    tp10k-log-normalized expression (log1p(1e4 * per-cell gene proportions)), NOT raw counts --
+    neither method normalizes its input; callers must preprocess (see
+    scimilarity.utils.align_dataset / lognorm_counts) before calling either."""
+    def __init__(self, model_path, device=None):
         if not model_path or not os.path.exists(model_path):
             raise FileNotFoundError(f"SCimilarity model dir not found: {model_path!r}")
         from scimilarity.utils import lognorm_counts  # noqa: F401  (import validates the dep)
         from scimilarity import CellEmbedding
-        self._ce = CellEmbedding(model_path)
-        self._net = self._ce.model
+        self.device = torch.device(device) if device is not None else torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+        # use_gpu keeps CellEmbedding's own .get_embeddings() (used by .embed()) placing its input
+        # profiles on the same device self._net (== self._ce.model, moved below) ends up on.
+        self._ce = CellEmbedding(model_path, use_gpu=(self.device.type == "cuda"))
+        self._net = self._ce.model.to(self.device)
     def embed(self, counts):
         return np.asarray(self._ce.get_embeddings(counts))
     def torch_encode(self, x):
-        return self._net(x)
+        dev = next(self._net.parameters()).device
+        return self._net(x.to(dev))
 
 class SSLEncoder(Encoder):
     """SSL-MLP encoder (scTab / PBMC) via SIGnature's SSLWrapper. Set FOCAL_SIGNATURE_SRC if the

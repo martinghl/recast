@@ -1,5 +1,6 @@
 """Result container + AnnData/label/marker IO (torch-free core)."""
 from dataclasses import dataclass, field
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -25,8 +26,11 @@ def gate_array(result, state, gate="dC"):
     gracefully instead of raising on legacy results."""
     if gate not in GATES:
         raise ValueError(f"gate must be one of {GATES}, got {gate!r}")
-    if gate == "dC" and result.dC is not None:
-        return result.dC[state].to_numpy()
+    if gate == "dC":
+        if result.dC is not None:
+            return result.dC[state].to_numpy()
+        warnings.warn("dC gate requested but AttributionResult.dC is None (e.g. a legacy/hand-built "
+                      "result); falling back to phi>0 gate", RuntimeWarning, stacklevel=2)
     return result.attribution[state].to_numpy()
 
 def read_h5ad(path):
