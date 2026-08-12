@@ -12,11 +12,15 @@ def test_modes_run_and_specificity():
     A.obs["state"] = ["S1", "S1", "S2", "S2"]
     attr = pd.DataFrame({"S1": [0.6, 0.6, 0.0]}, index=["G1", "G2", "G3"])  # bare ties G1,G2
     res = AttributionResult(attr, {"S1": ["G1", "G2", "G3"]})
+    # gate="phi": this synthetic result has no dC (legacy/hand-built), so the default gate="dC"
+    # would fall back to phi anyway but emit a RuntimeWarning (see io.gate_array) -- this test is
+    # about mode behavior, not the warning, so pin gate="phi" explicitly (numerically identical
+    # fallback value) to keep it warning-free.
     for m in ("bare", "tauE", "discr", "discrRU", "tauE_discr", "tauE_discrRU"):
-        out = composite(res, A, "state", mode=m)
+        out = composite(res, A, "state", mode=m, gate="phi")
         assert set(out["S1"]) == {"G1", "G2", "G3"}
     # tauE should break the G1/G2 tie in favour of the specific gene G1
-    assert composite(res, A, "state", mode="tauE")["S1"][0] == "G1"
+    assert composite(res, A, "state", mode="tauE", gate="phi")["S1"][0] == "G1"
 
 def test_bad_mode():
     import pytest

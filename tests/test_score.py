@@ -85,7 +85,11 @@ def test_score_frac_zero_when_cluster_has_no_positive_mass():
     genes = ["g0"]
     A = pd.DataFrame({"A": [5.0], "B": [-2.0]}, index=genes)
     res = AttributionResult(A, {"A": ["g0"], "B": ["g0"]}, {})
-    df = score_gene_set_focal(None, None, None, ["g0"], _result=res)
+    # gate="phi": this synthetic result has no dC (legacy/hand-built), so the default gate="dC"
+    # would fall back to phi anyway but emit a RuntimeWarning (see io.gate_array) -- this test is
+    # about the score_frac=0.0 guard, not the warning, so pin gate="phi" explicitly (numerically
+    # identical fallback value) to keep it warning-free.
+    df = score_gene_set_focal(None, None, None, ["g0"], _result=res, gate="phi")
     row = df.set_index("cluster").loc["B"]
     assert row.n_genes_found == 1
     assert row.score_sum == 0.0
