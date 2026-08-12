@@ -1,7 +1,7 @@
 """FOCAL scoring path: gene set in -> per-cluster FOCAL score out (reference baseline, dC>0-gated).
 Per-cluster only. Reuses attribute() with baseline='reference' and the composite weight ladder."""
 import numpy as np, pandas as pd
-from .attribute import attribute
+from .attribution import attribute
 from .composite import composite_weights
 from .io import gate_array
 

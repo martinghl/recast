@@ -1,6 +1,6 @@
 import numpy as np, anndata as ad
 from focal.encoders import StubEncoder
-from focal.attribute import attribute
+from focal.attribution import attribute
 
 def _leak_fixture():
     """3 genes, target T vs reference R: 'driver' is genuinely up in T (dC>0, phi>0) -- an honest

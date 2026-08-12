@@ -13,7 +13,7 @@ def _encoder(name, model, n_genes, adata=None):
 
 def _cmd_attribute(a):
     from .io import read_h5ad, write_attribution
-    from .attribute import attribute
+    from .attribution import attribute
     adata = read_h5ad(a.h5ad)
     enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
     ref = a.reference if a.reference in ("siblings", "rest") else [s for s in a.reference.split(",")]

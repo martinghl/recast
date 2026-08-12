@@ -1,10 +1,10 @@
 """FOCAL — Foundation-model Contrastive Attribution."""
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .io import AttributionResult
 from .composite import composite
 
-_LAZY = {"attribute": ".attribute", "cluster_attribution": ".score",
+_LAZY = {"attribute": ".attribution", "cluster_attribution": ".score",
          "score_gene_set_focal": ".score", "score_gene_set_panel": ".score",
          "SCimilarityEncoder": ".encoders", "SSLEncoder": ".encoders",
          "SCVIEncoder": ".encoders", "StubEncoder": ".encoders", "Encoder": ".encoders"}

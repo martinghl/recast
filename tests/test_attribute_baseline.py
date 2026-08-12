@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from focal.attribute import _attribute_one
+from focal.attribution import _attribute_one
 from focal.encoders import StubEncoder  # identity encoder, no weights
 
 def _toy():
