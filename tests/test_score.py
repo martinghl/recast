@@ -47,6 +47,33 @@ def test_duplicate_genes_are_deduped():
     assert (df["n_genes_found"] == 2).all()
     assert (df["score_frac"] <= 1.0 + 1e-6).all()
 
+def test_bare_score_is_signed_attribution_within_dC_gate_not_clipped():
+    """Pins the exact bare-score formula: mean_g(att_g . 1[dC_g>0]) -- SIGNED attribution within
+    the gate, not max(att,0). g_up_pos (dC>0,a>0) and g_up_neg (dC>0,a<0) are both gate-passing
+    under gate="dC" and contribute their own (possibly negative) att value; g_leak (dC<=0) has the
+    LARGEST raw attribution (5.0) but is gated to 0.0 despite a>0 -- the sign-mismatch leak this
+    fix closes. Under the legacy gate="phi", g_up_neg is excluded (a<=0) and g_leak is INCLUDED
+    (a>0), reproducing the pre-fix behavior."""
+    genes = ["g_up_pos", "g_up_neg", "g_leak"]
+    attr = pd.DataFrame({"C1": [2.0, -1.0, 5.0]}, index=genes)
+    dC = pd.DataFrame({"C1": [3.0, 1.0, -2.0]}, index=genes)
+    res = AttributionResult(attr, {"C1": genes}, {}, dC=dC)
+
+    df_dC = score_gene_set_focal(None, None, None, genes, _result=res)
+    row = df_dC.set_index("cluster").loc["C1"]
+    assert row.n_genes_found == 3
+    # sum = 2.0 (g_up_pos, kept) + (-1.0) (g_up_neg, kept SIGNED, not clipped to 0) + 0.0 (g_leak, gated)
+    assert abs(row.score_sum - 1.0) < 1e-9
+    assert abs(row.score_mean - 1.0 / 3) < 1e-9
+    # total positive mass = max(2,0)+max(-1,0)+max(0,0) = 2.0 -> frac = 1.0/2.0
+    assert abs(row.score_frac - 0.5) < 1e-9
+
+    df_phi = score_gene_set_focal(None, None, None, genes, _result=res, gate="phi")
+    row_phi = df_phi.set_index("cluster").loc["C1"]
+    # legacy gate: g_up_neg excluded (a<=0 -> 0.0), g_leak INCLUDED (a=5.0>0) -- the leak
+    assert abs(row_phi.score_sum - 7.0) < 1e-9
+    assert abs(row_phi.score_frac - 1.0) < 1e-9
+
 def test_score_frac_zero_when_cluster_has_no_positive_mass():
     """Directly pins the `total <= 0 -> score_frac = 0.0` guard via the private `_result` escape
     hatch, bypassing the real IG pipeline: forcing an actual all-nonpositive-phi cluster through

@@ -13,11 +13,15 @@ def _toy():
 
 def test_reference_baseline_differs_from_zero_and_is_finite():
     X, tmask = _toy(); enc = StubEncoder(X.shape[1])
-    a_zero = _attribute_one(enc, X, tmask, ~tmask, "cpu", baseline="zero")
-    a_ref  = _attribute_one(enc, X, tmask, ~tmask, "cpu", baseline="reference")
+    a_zero, dC_zero = _attribute_one(enc, X, tmask, ~tmask, "cpu", baseline="zero")
+    a_ref, dC_ref = _attribute_one(enc, X, tmask, ~tmask, "cpu", baseline="reference")
     assert a_zero.shape == a_ref.shape == (6,)
     assert np.all(np.isfinite(a_ref))
     assert not np.allclose(a_zero, a_ref)   # baseline choice changes φ
+    # dC = pseudobulk(target) - pseudobulk(reference) does NOT depend on which baseline IG used --
+    # it needs the reference pseudobulk "regardless of the IG baseline choice" (attribute.py comment)
+    assert dC_zero.shape == dC_ref.shape == (6,)
+    assert np.allclose(dC_zero, dC_ref)
 
 def test_bad_baseline_raises():
     X, tmask = _toy(); enc = StubEncoder(X.shape[1])

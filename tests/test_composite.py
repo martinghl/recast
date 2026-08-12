@@ -23,3 +23,22 @@ def test_bad_mode():
     with pytest.raises(ValueError):
         composite(AttributionResult(pd.DataFrame({"S": [0.]}, index=["G"]), {"S": ["G"]}),
                   None, "state", mode="nope")
+
+def test_dC_gate_default_excludes_leak_gene_phi_gate_includes_it():
+    """composite()'s default gate is dC>0 (pseudobulk target-vs-reference difference), not phi>0
+    (the attribution's own sign). G_leak has the LARGEST raw attribution (0.9) but dC<0 (it is
+    actually down-regulated) -- the exact sign-mismatch the fix closes. G_bg is the mirror case
+    (phi<=0, dC>0) that makes the flip an unambiguous 3-way reordering rather than a tie."""
+    genes = ["G_leak", "G_real", "G_bg"]
+    attr = pd.DataFrame({"S1": [0.9, 0.5, 0.0]}, index=genes)
+    dC = pd.DataFrame({"S1": [-3.0, 2.0, 0.1]}, index=genes)
+    res = AttributionResult(attr, {"S1": genes}, {}, dC=dC)
+    A = ad.AnnData(np.log1p(np.array([[5., 5., 1.], [5., 5., 1.], [0., 5., 1.], [0., 5., 1.]],
+                                     dtype="float32")))
+    A.var_names = genes; A.obs["state"] = ["S1", "S1", "S2", "S2"]
+
+    ranked_dC = composite(res, A, "state", mode="bare")["S1"]
+    assert ranked_dC == ["G_real", "G_bg", "G_leak"]        # G_leak gated out -> ranked last
+
+    ranked_phi = composite(res, A, "state", mode="bare", gate="phi")["S1"]
+    assert ranked_phi == ["G_leak", "G_real", "G_bg"]       # legacy gate: G_leak ranked FIRST
