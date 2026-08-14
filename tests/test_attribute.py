@@ -25,12 +25,17 @@ def test_gate_dC_excludes_sign_mismatched_gene_but_phi_includes_it():
     """Pins the exact bug the dC>0 default fixes: 'leak' has phi>0 (positive IG attribution) but
     dC<0 (it is NOT actually up-regulated in T vs R) -- gate='dC' must exclude it (ranked last,
     behind the dC>0-but-phi<0 'filler' gene), while the legacy gate='phi' includes it (ranked ahead
-    of 'filler', on its raw attribution sign alone)."""
+    of 'filler', on its raw attribution sign alone).
+
+    The gate rule under test is centroid-independent (`np.where(gate_vals>0, att, -inf)`), but this
+    fixture's exact dC/phi magnitudes for the auxiliary 'filler' gene were grid-searched against the
+    pseudobulk centroid, so both calls pin centroid='pseudobulk' to keep the documented ranking. (The
+    default mean_lognorm centroid is covered by test_default_centroid_is_mean_lognorm.)"""
     A = _leak_fixture(); enc = StubEncoder(3)
     res_dC = attribute(enc, A, "state", target="T", reference="siblings", device="cpu",
-                       baseline="reference", gate="dC")
+                       baseline="reference", gate="dC", centroid="pseudobulk")
     res_phi = attribute(enc, A, "state", target="T", reference="siblings", device="cpu",
-                        baseline="reference", gate="phi")
+                        baseline="reference", gate="phi", centroid="pseudobulk")
 
     # pin the underlying sign mismatch this test relies on
     assert res_dC.attribution["T"]["leak"] > 0                 # phi>0 ...

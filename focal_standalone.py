@@ -7,9 +7,11 @@ foundation-model encoder, FOCAL returns the genes that DEFINE a target-vs-refere
 
   1. embed cells with the FM                      -> L2-normalized vectors
   2. contrast direction  u = normalize(mean(enc(target)) - mean(enc(reference)))
-  3. denoised pseudobulk centroid  C = log1p(1e4 * per-gene proportion) of the target cluster
+  3. denoised reference centroid  C  of the target cluster -- by default the mean of the cells' per-cell
+     log1p(1e4 * proportion) profiles (--centroid mean_lognorm; --centroid pseudobulk pools counts
+     before the log instead)
   4. Integrated-Gradients attribute C through f(x) = <enc(x), u>
-  5. rank genes by attribution, gated per target state (dC = pseudobulk(target)-pseudobulk(reference)
+  5. rank genes by attribution, gated per target state (dC = centroid(target)-centroid(reference)
      > 0 by default, i.e. the gene must be genuinely up-regulated -- --gate phi reproduces the legacy
      attribution-sign gate)   (optionally reweight with the composite marker layer)
 
@@ -38,9 +40,11 @@ Encoders:  stub | scimilarity | ssl | scvi
 --target    : a single state label; omit to attribute EVERY state vs its reference.
 --composite : omit for the raw FOCAL ranking, or one of
               bare | tauE | discr | discrRU | tauE_discr | tauE_discrRU  (marker-specialization layer).
---gate      : "dC" (default, CORRECT: pseudobulk(target)-pseudobulk(reference) > 0 -- the gene must be
+--gate      : "dC" (default, CORRECT: centroid(target)-centroid(reference) > 0 -- the gene must be
               genuinely up-regulated) or "phi" (legacy: the attribution's own sign > 0 -- back-compat
               escape hatch that lets a sign-mismatched, actually-down gene leak into the ranking).
+--centroid  : "mean_lognorm" (default, the research recipe: mean of per-cell lognorm) or "pseudobulk"
+              (opt-in: pool counts before the log).
 
 Note on devices: for real FMs the encoder's weights and --device must be on the SAME device; the IG
 wrapper does not move FM weights.  --device defaults to cuda if available, else cpu.
@@ -94,16 +98,30 @@ def mw_auc(a, b):
     return (U / (na * nb)).astype("float32")
 
 
-# ============================================================ denoised pseudobulk centroid
+# ============================================================ denoised reference centroids
+def mean_lognorm_centroid(counts, mask=None):
+    """Default recipe: per-cell tp10k-lognorm, THEN mean over the cell set (pool AFTER the log).
+    Returns (genes,) float32 = mean_i log1p(1e4 * x_ig / sum_g' x_ig'). This is the recipe the research
+    marker-selection + per-cell benchmark use -- pseudobulk_centroid pools counts BEFORE the log."""
+    X = counts if mask is None else counts[mask]
+    X = X.toarray() if sp.issparse(X) else np.asarray(X, dtype=float)
+    tot = X.sum(axis=1, keepdims=True)
+    tot[tot == 0] = 1.0
+    return np.log1p(1e4 * X / tot).mean(axis=0).astype("float32")
+
+
 def pseudobulk_centroid(counts, mask=None):
-    """counts: (cells, genes) raw counts (dense or sparse); mask: optional boolean (cells,).
-    Returns (genes,) float32 = log1p(1e4 * gene_total / all_total)."""
+    """Opt-in recipe: pool counts BEFORE the log. counts: (cells, genes) raw counts (dense or sparse);
+    mask: optional boolean (cells,). Returns (genes,) float32 = log1p(1e4 * gene_total / all_total)."""
     X = counts if mask is None else counts[mask]
     gene_tot = np.asarray(X.sum(axis=0)).ravel() if sp.issparse(X) else np.asarray(X, dtype=float).sum(axis=0)
     total = gene_tot.sum()
     if total <= 0:
         return np.zeros(gene_tot.shape[0], dtype="float32")
     return np.log1p(1e4 * gene_tot / total).astype("float32")
+
+
+CENTROIDS = {"mean_lognorm": mean_lognorm_centroid, "pseudobulk": pseudobulk_centroid}
 
 
 # ============================================================ reference resolution + contrast direction
@@ -251,10 +269,11 @@ def resolve_labels(adata, cluster_key):
 GATES = ("dC", "phi")
 
 
-def _attribute_one(enc, counts, target_mask, ref_mask, device):
+def _attribute_one(enc, counts, target_mask, ref_mask, device, centroid="mean_lognorm"):
+    cfn = CENTROIDS[centroid]
     u = contrast_direction(enc.embed(counts[target_mask]), enc.embed(counts[ref_mask]))
-    C = pseudobulk_centroid(counts, target_mask)
-    C_ref = pseudobulk_centroid(counts, ref_mask)   # needed for the dC>0 gate (mirrors focal/attribute.py)
+    C = cfn(counts, target_mask)
+    C_ref = cfn(counts, ref_mask)   # needed for the dC>0 gate (mirrors focal/attribution.py)
     dC = C - C_ref
     x = torch.as_tensor(C[None], dtype=torch.float32, device=device).requires_grad_(True)
     ut = torch.as_tensor(u[None], dtype=torch.float32, device=device)
@@ -263,17 +282,22 @@ def _attribute_one(enc, counts, target_mask, ref_mask, device):
     return att.detach().cpu().numpy().ravel(), dC
 
 
-def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, gate="dC"):
+def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, gate="dC",
+              centroid="mean_lognorm"):
     """Returns (attribution_df: genes x states, genes_dict: state -> ranked gene list, meta).
-    gate: 'dC' (default, CORRECT) ranks genes by pseudobulk(target)-pseudobulk(reference) > 0 -- i.e.
+    gate: 'dC' (default, CORRECT) ranks genes by centroid(target)-centroid(reference) > 0 -- i.e.
     the gene must be genuinely up-regulated in the target state, not merely have positive IG
     attribution. 'phi' is the legacy rule (the attribution's own sign > 0), kept as a back-compat
     escape hatch -- it lets a gene that's actually DOWN (dC<=0) but picks up positive attribution
-    (sign mismatch) leak into the ranked/composite output."""
+    (sign mismatch) leak into the ranked/composite output.
+    centroid: 'mean_lognorm' (default, the research recipe: mean of per-cell lognorm) or 'pseudobulk'
+    (opt-in: pool counts before the log)."""
     if torch is None:
         raise ImportError("attribute() needs torch + captum (pip install torch captum)")
     if gate not in GATES:
         raise ValueError(f"gate must be one of {GATES}, got {gate!r}")
+    if centroid not in CENTROIDS:
+        raise ValueError(f"centroid must be one of {sorted(CENTROIDS)}, got {centroid!r}")
     device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     labels = resolve_labels(adata, cluster_key)
     counts = adata.X
@@ -285,12 +309,12 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
     cols, ranked = {}, {}
     for s in states:
         tmask, rmask = resolve_reference(labels, s, reference)
-        att, dC = _attribute_one(enc, counts, tmask, rmask, device)
+        att, dC = _attribute_one(enc, counts, tmask, rmask, device, centroid=centroid)
         cols[s] = att
         gate_vals = dC if gate == "dC" else att
         order = np.argsort(-np.where(gate_vals > 0, att, -np.inf))   # dC>0 (default) or legacy att>0
         ranked[s] = [genes[j] for j in order]
-    meta = {"reference": reference, "n_genes": len(genes), "gate": gate}
+    meta = {"reference": reference, "n_genes": len(genes), "gate": gate, "centroid": centroid}
     return pd.DataFrame(cols, index=genes), ranked, meta
 
 
@@ -382,8 +406,11 @@ def main(argv=None):
     ap.add_argument("--target", default=None, help="a single state label; omit to attribute every state")
     ap.add_argument("--reference", default="siblings", help="'siblings' | 'rest' | comma-list of labels")
     ap.add_argument("--gate", default="dC", choices=list(GATES),
-                    help="'dC' (default, correct: pseudobulk target-vs-reference > 0) or 'phi' "
+                    help="'dC' (default, correct: centroid target-vs-reference > 0) or 'phi' "
                          "(legacy attribution-sign gate, back-compat escape hatch)")
+    ap.add_argument("--centroid", default="mean_lognorm", choices=["mean_lognorm", "pseudobulk"],
+                    help="reference-centroid recipe; default 'mean_lognorm' (research recipe: mean of "
+                         "per-cell lognorm), 'pseudobulk' pools counts before the log")
     ap.add_argument("--composite", default=None, choices=list(_COMPOSITE_MODES),
                     help="marker-specialization layer; omit for the raw FOCAL ranking")
     ap.add_argument("--composite-layer", default=None,
@@ -401,7 +428,7 @@ def main(argv=None):
 
     attribution_df, genes_dict, meta = attribute(
         enc, adata, args.cluster_key, target=args.target, reference=reference, device=args.device,
-        gate=args.gate)
+        gate=args.gate, centroid=args.centroid)
 
     if args.composite:
         scored = composite(attribution_df, genes_dict, adata, args.cluster_key,

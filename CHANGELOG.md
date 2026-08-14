@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0
+
+- **Default centroid is now `mean_lognorm`** on `attribute`, `cluster_attribution`, and
+  `score_cells_attribution_weighted_expression` (and `focal score-cells --centroid`). This is the recipe
+  the research marker-selection and per-cell benchmark actually use — the mean of the cells' per-cell
+  tp10k-lognorm profiles (`Xtr[mask].mean(0)` on lognorm `.X`, i.e. pool AFTER the log) — so the shipped
+  library now reproduces the slides/benchmark numbers **out of the box**, with no opt-in flag.
+- **Breaking**: this changes the default marker-selection and per-cell scoring output. The prior default
+  `pseudobulk` (pool counts BEFORE the log: `log1p(1e4 · proportion)`) is retained as an explicit opt-in
+  `centroid="pseudobulk"`. On the FOCAL fine-state benchmark the two recipes are close; `mean_lognorm` is
+  the faithful research recipe and is slightly stronger on the fine sibling-state scenario FOCAL targets,
+  so it is the new default.
+- Corrects earlier docs (README/CHANGELOG/usage) that described FOCAL's denoised profile as a
+  pool-before-log "pseudobulk (`log1p(1e4 · proportion)`)": the method's centroid is the mean of per-cell
+  lognorm, and always was in the research code — only the shipped library's default had diverged.
+- Tests: `test_default_centroid_is_mean_lognorm` replaces `test_selection_default_is_pseudobulk_unchanged`;
+  the centroid-independent gate-mechanism test pins `centroid="pseudobulk"` for its grid-searched fixture.
+  `focal.centroid.mean_lognorm_centroid` remains the shared helper.
+
 ## 0.3.1
 
 - **Benchmark-parity centroid (`centroid="mean_lognorm"`)** on

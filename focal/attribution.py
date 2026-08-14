@@ -1,6 +1,6 @@
-"""Core FOCAL: contrast direction u in an encoder's embedding, then IG-attribute the denoised pseudobulk
-centroid through f(x)=<enc(x),u>, gated per target state (dC>0 by default -- see gate= below). Needs the
-[attribution] extra."""
+"""Core FOCAL: contrast direction u in an encoder's embedding, then IG-attribute the target-state
+reference centroid (mean of per-cell lognorm by default) through f(x)=<enc(x),u>, gated per target state
+(dC>0 by default -- see gate= below). Needs the [attribution] extra."""
 import numpy as np
 import pandas as pd
 import torch
@@ -11,7 +11,7 @@ from .io import AttributionResult, resolve_labels, GATES
 
 CENTROIDS = {"pseudobulk": pseudobulk_centroid, "mean_lognorm": mean_lognorm_centroid}
 
-def _attribute_one(enc, counts, target_mask, ref_mask, device, baseline="zero", centroid="pseudobulk"):
+def _attribute_one(enc, counts, target_mask, ref_mask, device, baseline="zero", centroid="mean_lognorm"):
     if centroid not in CENTROIDS:
         raise ValueError(f"centroid must be one of {sorted(CENTROIDS)}, got {centroid!r}")
     cfn = CENTROIDS[centroid]
@@ -32,16 +32,16 @@ def _attribute_one(enc, counts, target_mask, ref_mask, device, baseline="zero", 
     return att.detach().cpu().numpy().ravel(), dC
 
 def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, baseline="zero",
-             gate="dC", centroid="pseudobulk"):
-    """gate: 'dC' (default, CORRECT) ranks/keeps genes with pseudobulk(target)-pseudobulk(ref) > 0 --
+             gate="dC", centroid="mean_lognorm"):
+    """gate: 'dC' (default, CORRECT) ranks/keeps genes with centroid(target)-centroid(ref) > 0 --
     i.e. the gene is genuinely up-regulated in the target state. 'phi' is the legacy rule (attribution's
     own sign > 0), kept as a back-compat escape hatch -- it lets a gene that's actually DOWN (dC<=0) but
     picks up positive IG attribution (sign mismatch) leak into the ranked/composite/score outputs.
 
-    centroid: 'pseudobulk' (default, the FOCAL M0 recipe) builds the IG target/baseline as the
-    pool-counts-then-log denoised pseudobulk. 'mean_lognorm' builds them as the mean of per-cell
-    tp10k-lognorm expression (the per-cell benchmark's pool-AFTER-log centroid) -- an opt-in used only
-    to bit-level reproduce the benchmark/slides scoring numbers; the default leaves selection unchanged."""
+    centroid: 'mean_lognorm' (default) builds the IG target/baseline as the mean of the cells' per-cell
+    tp10k-lognorm profiles -- the recipe the research marker-selection + per-cell benchmark actually use,
+    so it reproduces the slides/benchmark numbers. 'pseudobulk' is the opt-in pool-counts-then-log
+    denoised profile (a distinct pool-BEFORE-log centroid)."""
     if gate not in GATES:
         raise ValueError(f"gate must be one of {GATES}, got {gate!r}")
     device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")

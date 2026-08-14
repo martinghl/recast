@@ -12,8 +12,10 @@ returns an `AttributionResult`:
 - For each target state, embeds the target cells and the reference cells with `enc`,
   takes the L2-normalized difference of their mean embeddings as the contrast direction
   `u`.
-- Builds the target's denoised pseudobulk centroid: `log1p(1e4 * gene_total /
-  total_counts)` over the target cells.
+- Builds the target's denoised reference centroid — by default the mean of the target
+  cells' per-cell `log1p(1e4 * proportion)` profiles (`centroid="mean_lognorm"`); the
+  opt-in `centroid="pseudobulk"` pools counts before the log (`log1p(1e4 * gene_total /
+  total_counts)`) instead.
 - Runs Integrated Gradients (zero baseline) on `f(x) = <enc.torch_encode(x), u>`
   evaluated at the centroid, producing one attribution value per gene.
 - Ranks **every** gene by attribution descending — `result.genes[state]` always
@@ -150,21 +152,21 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
   — **per-cluster** gene-set score: one row per cluster (`score_sum` / `score_mean` /
   `score_frac`). `focal.score_gene_set_panel(...)` scores many sets × composite variants
   in a single attribution pass. Requires `[attribution]`.
-- `focal.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC", centroid="pseudobulk") -> pd.DataFrame`
+- `focal.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC", centroid="mean_lognorm") -> pd.DataFrame`
   — **per-cell** score `[n_cells × states]`:
   `S_i(c) = mean_{g∈G_c} max(0, x_ig − C_ref,g) · max(0, φ_c[g])` — each panel gene's
-  reference-relative over-expression (per-cell tp10k-lognorm minus the reference denoised
-  pseudobulk), weighted by the FOCAL attribution `φ_c` (positive channel). `gene_sets` is
+  reference-relative over-expression (per-cell tp10k-lognorm minus the reference centroid),
+  weighted by the FOCAL attribution `φ_c` (positive channel). `gene_sets` is
   `{state: [genes]}` (one panel per candidate state); `P.idxmax(axis=1)` is the predicted
   state per cell. `calibrate ∈ {None, 'zscore', 'rank'}` is a label-free per-state rescale
   that calibrates the cross-state **argmax** without changing per-state one-vs-rest AUROC
-  (`'zscore'` is the benchmark's top per-cell classifier). `centroid ∈ {'pseudobulk',
-  'mean_lognorm'}` sets the reference-centroid recipe for **both** `φ` and `C_ref`:
-  `'pseudobulk'` (default) is the FOCAL M0 pool-then-log denoised centroid; `'mean_lognorm'`
-  is the per-cell benchmark's pool-after-log centroid (`Xtr[ref].mean(0)` on lognorm `.X`) and
-  bit-level reproduces the benchmark/slides per-cell scores (real SCimilarity: `max|Δ| ≈ 5e-9`).
-  Scores every cell with an attribution fit on all cells (transductive); cross-validate for an
-  unbiased benchmark. Requires `[attribution]`.
+  (`'zscore'` is the benchmark's top per-cell classifier). `centroid ∈ {'mean_lognorm',
+  'pseudobulk'}` sets the reference-centroid recipe for **both** `φ` and `C_ref`:
+  `'mean_lognorm'` (default) is the per-cell benchmark's pool-after-log centroid
+  (`Xtr[ref].mean(0)` on lognorm `.X`), which reproduces the benchmark/slides per-cell scores
+  bit-for-bit (real SCimilarity: `max|Δ| ≈ 5e-9`); `'pseudobulk'` is the opt-in pool-before-log
+  denoised centroid. Scores every cell with an attribution fit on all cells (transductive);
+  cross-validate for an unbiased benchmark. Requires `[attribution]`.
 - `focal.AttributionResult` — dataclass: `attribution: pd.DataFrame`, `genes: dict`,
   `meta: dict`, `.top(state, k=20)`.
 - `focal.io.read_h5ad(path)`, `focal.io.write_attribution(result, path)`,
@@ -195,7 +197,7 @@ focal score-set  --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH
 
 focal score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
                  --cluster-key KEY --gene-sets panels.json [--reference rest]
-                 [--calibrate none|zscore|rank] [--centroid pseudobulk|mean_lognorm]
+                 [--calibrate none|zscore|rank] [--centroid mean_lognorm|pseudobulk]
                  --out cells.csv                                          # PER-CELL
 ```
 
@@ -218,7 +220,7 @@ focal score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PAT
   `[cell × state]` CSV with a leading `predicted` column (argmax of the state scores) —
   `--gene-sets` is a JSON `{state: [genes]}` and `--calibrate` defaults to `zscore` (the
   cross-state argmax calibration; use `none` for raw scores, `rank` for a rank transform).
-  `--centroid` defaults to `pseudobulk` (the FOCAL M0 recipe); pass `mean_lognorm` to
-  bit-level reproduce the per-cell benchmark/slides scores.
+  `--centroid` defaults to `mean_lognorm` (the research/slides recipe, reproduced bit-for-bit);
+  pass `pseudobulk` for the opt-in pool-before-log centroid.
 - All subcommands return `0` on success (see `focal.cli.main`); there is currently no
   non-zero exit path other than an uncaught exception from inside the library.

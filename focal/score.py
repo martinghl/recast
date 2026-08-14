@@ -9,10 +9,10 @@ from .contrast import resolve_reference
 from .io import gate_array, resolve_labels
 
 def cluster_attribution(enc, adata, cluster_key, reference="rest", device=None, gate="dC",
-                        centroid="pseudobulk"):
+                        centroid="mean_lognorm"):
     """AttributionResult: φ per gene×cluster, REFERENCE baseline (research-consistent), dC>0-gated
     rank by default (gate="phi" reproduces the legacy attribution-sign-gated rank). centroid passes
-    through to attribute() ('mean_lognorm' = benchmark-parity; default 'pseudobulk' unchanged)."""
+    through to attribute() (default 'mean_lognorm' = the research/slides recipe; 'pseudobulk' opt-in)."""
     return attribute(enc, adata, cluster_key, target=None, reference=reference,
                      device=device, baseline="reference", gate=gate, centroid=centroid)
 
@@ -81,14 +81,15 @@ def _calibrate_columns(S, method):
 
 def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *,
                                                 reference="rest", calibrate=None, device=None,
-                                                gate="dC", centroid="pseudobulk", _result=None):
+                                                gate="dC", centroid="mean_lognorm", _result=None):
     """Per-CELL FOCAL scoring (companion to the per-cluster score_gene_set_focal). For candidate state
     c with marker panel G_c and cell i:
 
         S_i(c) = mean_{g in G_c}  max(0, x_ig - C_ref,g[c]) * max(0, phi_c[g])
 
-    x_i = the cell's tp10k-lognorm expression; C_ref[c] = denoised pseudobulk of c's reference cells;
-    phi_c = the FOCAL contrastive attribution for c (positive channel). I.e. each panel gene's
+    x_i = the cell's tp10k-lognorm expression; C_ref[c] = the reference centroid of c's reference cells
+    (mean of per-cell lognorm by default); phi_c = the FOCAL contrastive attribution for c (positive
+    channel). I.e. each panel gene's
     reference-relative over-expression in this cell, weighted by how much that gene drives the encoder's
     c-vs-reference distinction, averaged over the panel.
 
@@ -103,11 +104,11 @@ def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_se
         Label-free per-state rescale. Does NOT change per-state one-vs-rest AUROC (within-state order
         is preserved) but makes the cross-state argmax well-calibrated. 'zscore' is what our benchmark's
         top per-cell classifier uses -- pass it when you want the argmax label, leave None for raw scores.
-    centroid : 'pseudobulk' | 'mean_lognorm'
-        Reference-centroid recipe for BOTH the attribution phi and the per-cell C_ref. 'pseudobulk'
-        (default) is the FOCAL M0 pool-then-log denoised centroid. 'mean_lognorm' is the per-cell
-        benchmark's pool-after-log centroid (Xtr[ref].mean(0) on lognorm .X) -- pass it to bit-level
-        reproduce the benchmark/slides scoring numbers (see reproduce/). Default keeps prior behaviour.
+    centroid : 'mean_lognorm' | 'pseudobulk'
+        Reference-centroid recipe for BOTH the attribution phi and the per-cell C_ref. 'mean_lognorm'
+        (default) is the per-cell benchmark's pool-AFTER-log centroid (Xtr[ref].mean(0) on lognorm .X)
+        -- the recipe the research/slides scoring actually uses, reproduced here bit-for-bit (see
+        reproduce/). 'pseudobulk' is the opt-in pool-BEFORE-log denoised centroid.
     _result : AttributionResult, optional
         Precomputed cluster_attribution to reuse (skips the one attribution pass).
 

@@ -9,7 +9,7 @@ class AttributionResult:
     attribution: pd.DataFrame            # index = genes, columns = attributed states
     genes: dict                          # state -> list[str] ranked genes (desc)
     meta: dict = field(default_factory=dict)
-    dC: pd.DataFrame = None              # index = genes, columns = states; pseudobulk(target)-pseudobulk(ref)
+    dC: pd.DataFrame = None              # index = genes, columns = states; centroid(target)-centroid(ref)
                                           # per gate: None if this result predates the dC>0 gate fix (e.g. a
                                           # hand-built/legacy result) -- gate_array() falls back to `phi` then.
     def top(self, state, k=20):
@@ -18,7 +18,7 @@ class AttributionResult:
 GATES = ("dC", "phi")
 
 def gate_array(result, state, gate="dC"):
-    """The array used to gate `state`'s genes under `gate`: dC ((target-ref) pseudobulk difference,
+    """The array used to gate `state`'s genes under `gate`: dC ((target-ref) centroid difference,
     the documented/correct rule -- a gene must be genuinely up in the target vs reference) or phi (the
     attribution's own sign -- the legacy/back-compat rule, which lets sign-mismatched genes leak through).
     Falls back to phi when gate="dC" is requested but `result.dC` is unavailable (e.g. a synthetic

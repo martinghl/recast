@@ -34,7 +34,7 @@ def composite_weights(result, adata, cluster_key, mode="tauE_discrRU", layer=Non
     gate-passing genes the weight is ap * <mode factor> (ap = max(a, 0); "bare" has no extra
     factor).
 
-    gate: 'dC' (default, CORRECT) zeroes genes whose pseudobulk(target)-pseudobulk(ref) <= 0 --
+    gate: 'dC' (default, CORRECT) zeroes genes whose centroid(target)-centroid(ref) <= 0 --
     i.e. genes that are not genuinely up-regulated in the target state, even if their raw
     attribution a is positive (sign mismatch -- the bug this default fixes). 'phi' is the legacy
     rule (a <= 0 zeroed), kept as a back-compat escape hatch. dC is read from `result.dC`; if the

@@ -68,13 +68,14 @@ def test_missing_genes_dropped_and_empty_panel_is_zero():
 
 
 def test_formula_matches_building_blocks():
-    """Pin S_i(c) = mean_{g in G_c} max(0, x_ig - C_ref,g) * max(0, phi_c[g]) against a hand
-    recomputation from cluster_attribution + pseudobulk_centroid + per-cell tp10k-lognorm."""
+    """Pin the OPT-IN pseudobulk recipe: S_i(c) = mean_{g in G_c} max(0, x_ig - C_ref,g) * max(0, phi_c[g])
+    against a hand recomputation from pseudobulk_centroid + per-cell tp10k-lognorm. (The default
+    mean_lognorm recipe is pinned in test_parity_score_cells_uses_mean_lognorm_cref.)"""
     from focal.centroid import pseudobulk_centroid
     from focal.contrast import resolve_reference
     a = _planted(); enc = StubEncoder(a.n_vars)
-    res = cluster_attribution(enc, a, "state", reference="rest")
-    P = score_cells(enc, a, "state", PANELS, reference="rest", _result=res)
+    res = cluster_attribution(enc, a, "state", reference="rest", centroid="pseudobulk")
+    P = score_cells(enc, a, "state", PANELS, reference="rest", centroid="pseudobulk", _result=res)
     counts = np.asarray(a.X, dtype="float32")
     tot = counts.sum(1, keepdims=True); tot[tot == 0] = 1.0
     Xln = np.log1p(1e4 * counts / tot)
@@ -120,15 +121,17 @@ def test_mean_lognorm_centroid_pools_after_log():
                            pseudobulk_centroid(counts, mask), atol=1e-3)
 
 
-def test_selection_default_is_pseudobulk_unchanged():
-    """Regression guard for the marker-selection line: the default attribution is bit-identical to
-    explicitly requesting pseudobulk -> adding the parity option leaves selection untouched."""
+def test_default_centroid_is_mean_lognorm():
+    """The default centroid is mean_lognorm -- the recipe the research/benchmark actually uses (mean of
+    per-cell lognorm). The default attribution is bit-identical to explicitly asking for mean_lognorm,
+    and genuinely different from the opt-in pseudobulk (pool-counts-then-log)."""
     a = _planted(); enc = StubEncoder(a.n_vars)
     res_default = cluster_attribution(enc, a, "state", reference="rest")
-    res_pseudo = cluster_attribution(enc, a, "state", reference="rest", centroid="pseudobulk")
+    res_ml = cluster_attribution(enc, a, "state", reference="rest", centroid="mean_lognorm")
+    res_pb = cluster_attribution(enc, a, "state", reference="rest", centroid="pseudobulk")
     for c in res_default.attribution.columns:
-        assert np.array_equal(res_default.attribution[c].to_numpy(),
-                              res_pseudo.attribution[c].to_numpy())
+        assert np.array_equal(res_default.attribution[c].to_numpy(), res_ml.attribution[c].to_numpy())
+    assert not np.allclose(res_default.attribution.to_numpy(), res_pb.attribution.to_numpy(), atol=1e-4)
 
 
 def test_parity_attribution_anchor_switches_to_mean_lognorm():

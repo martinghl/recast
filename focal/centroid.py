@@ -1,13 +1,14 @@
 """Reference centroids over a cell set. Two definitions, both legitimate; they differ only in whether
 you pool counts BEFORE or AFTER the log:
 
-  pseudobulk_centroid  (default, FOCAL M0 recipe): pool counts across cells -> one proportion -> log.
-  mean_lognorm_centroid (benchmark-parity):        log1p-normalize each cell -> mean across cells.
+  mean_lognorm_centroid (default): log1p-normalize each cell -> mean across cells. This is what the
+      research marker-selection and per-cell benchmark actually use (`Xtr[mask].mean(0)` on tp10k-lognorm
+      .X, i.e. pool AFTER the log), so it is the recipe that reproduces the slides/benchmark numbers.
+  pseudobulk_centroid  (opt-in):   pool counts across cells -> one proportion -> log. A distinct
+      pool-BEFORE-log denoised profile, kept as an explicit alternative (centroid='pseudobulk').
 
-The per-cell FOCAL benchmark (focal_pcell_bench.py) builds its reference/target centroids the second
-way (`Xtr[mask].mean(0)` on tp10k-lognorm .X). Selection and the default scoring path use the first;
-the second exists so the shipped library can bit-level reproduce the benchmark/slides numbers when
-asked (centroid='mean_lognorm')."""
+Both feed the same downstream contrast / IG / scoring path; they only change how the target and
+reference cells are collapsed into a single denoised profile."""
 import numpy as np
 import scipy.sparse as sp
 

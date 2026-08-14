@@ -29,9 +29,11 @@ explicit, per gene:
 1. **Contrast direction.** Embed the target cells and the reference cells with the FM,
    and take the (L2-normalized) difference of their mean embeddings — a unit vector `u`
    pointing from "reference" toward "target" in embedding space.
-2. **Denoised pseudobulk centroid.** Collapse the target cells into a single
-   denoised profile: `log1p(1e4 * per-gene proportion)` over all target cells, not a
-   single noisy cell.
+2. **Denoised reference centroid.** Collapse the target cells into a single
+   denoised profile — by default the mean of the cells' per-cell `log1p(1e4 * proportion)`
+   expression (`centroid="mean_lognorm"`) — so the attribution sees a stable population
+   profile, not a single noisy cell. (`centroid="pseudobulk"` is an opt-in variant that
+   pools counts *before* the log instead.)
 3. **Attribute, don't just embed.** Run Integrated Gradients (from a zero baseline to
    the centroid) on the scalar `f(x) = <encoder(x), u>` — i.e. attribute *how much
    each gene's expression in the centroid pushes the embedding along the target
@@ -120,8 +122,9 @@ P = focal.score_cells_attribution_weighted_expression(
         gene_sets={"CX3CR1+ CD8": [...], "CXCR6+ CD8": [...]},   # one panel per candidate state
         reference="rest", calibrate="zscore")
 P.idxmax(axis=1)                # per-cell predicted state (argmax of the per-state scores)
-# centroid="mean_lognorm" bit-level reproduces our per-cell benchmark/slides scores (default
-# "pseudobulk" is the FOCAL M0 recipe); see CHANGELOG 0.3.1 and docs/usage.md.
+# The default centroid (mean of per-cell lognorm) bit-level reproduces our per-cell
+# benchmark/slides scores; centroid="pseudobulk" is the opt-in pool-before-log variant.
+# See CHANGELOG 0.4.0 and docs/usage.md.
 ```
 
 `adata` is an `AnnData` with raw (or size-consistent) counts in `.X` and the cluster /

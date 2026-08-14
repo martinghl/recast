@@ -85,8 +85,9 @@ def main(argv=None):
                     help="JSON {state: [genes]} -- one curated panel per candidate state")
     sc.add_argument("--reference", default="rest"); sc.add_argument("--calibrate", default="zscore",
                     choices=["none", "zscore", "rank"], help="per-state rescale for the argmax (default zscore)")
-    sc.add_argument("--centroid", default="pseudobulk", choices=["pseudobulk", "mean_lognorm"],
-                    help="reference-centroid recipe; 'mean_lognorm' = benchmark-parity (reproduces slides)")
+    sc.add_argument("--centroid", default="mean_lognorm", choices=["mean_lognorm", "pseudobulk"],
+                    help="reference-centroid recipe; default 'mean_lognorm' = the research/slides method "
+                         "(mean of per-cell lognorm); 'pseudobulk' pools counts before the log (opt-in)")
     sc.add_argument("--out", required=True); sc.set_defaults(fn=_cmd_score_cells)
     args = p.parse_args(argv)
     return args.fn(args)
