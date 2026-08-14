@@ -21,11 +21,15 @@
 
 ## 0.3.1
 
+> **Superseded by 0.4.0.** The default later flipped to `mean_lognorm`, and the "FOCAL M0 recipe"
+> wording below is corrected there: FOCAL's research recipe is the mean of per-cell lognorm — never
+> pool-then-log "pseudobulk". The notes below describe the state *at the time* of the 0.3.1 release.
+
 - **Benchmark-parity centroid (`centroid="mean_lognorm"`)** on
   `score_cells_attribution_weighted_expression`, `cluster_attribution`, and `attribute`. The per-cell
   FOCAL benchmark (`focal_pcell_bench.py`, which produced the slides scoring numbers) builds its
   reference/target centroids as the mean of per-cell tp10k-lognorm (`Xtr[mask].mean(0)` — pool AFTER the
-  log); the library default `centroid="pseudobulk"` pools counts BEFORE the log (the FOCAL M0 recipe).
+  log); the library default at the time, `centroid="pseudobulk"`, pooled counts BEFORE the log.
   Passing `centroid="mean_lognorm"` makes the shipped library reproduce the benchmark per-cell scores
   **bit-for-bit** — on real SCimilarity, `max|Δ score| = 4.7e-9` against the exact
   `build_candidate_params` + `m1_scores`. New helper `focal.centroid.mean_lognorm_centroid`; CLI
