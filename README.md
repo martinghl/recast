@@ -120,6 +120,8 @@ P = focal.score_cells_attribution_weighted_expression(
         gene_sets={"CX3CR1+ CD8": [...], "CXCR6+ CD8": [...]},   # one panel per candidate state
         reference="rest", calibrate="zscore")
 P.idxmax(axis=1)                # per-cell predicted state (argmax of the per-state scores)
+# centroid="mean_lognorm" bit-level reproduces our per-cell benchmark/slides scores (default
+# "pseudobulk" is the FOCAL M0 recipe); see CHANGELOG 0.3.1 and docs/usage.md.
 ```
 
 `adata` is an `AnnData` with raw (or size-consistent) counts in `.X` and the cluster /

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1
+
+- **Benchmark-parity centroid (`centroid="mean_lognorm"`)** on
+  `score_cells_attribution_weighted_expression`, `cluster_attribution`, and `attribute`. The per-cell
+  FOCAL benchmark (`focal_pcell_bench.py`, which produced the slides scoring numbers) builds its
+  reference/target centroids as the mean of per-cell tp10k-lognorm (`Xtr[mask].mean(0)` — pool AFTER the
+  log); the library default `centroid="pseudobulk"` pools counts BEFORE the log (the FOCAL M0 recipe).
+  Passing `centroid="mean_lognorm"` makes the shipped library reproduce the benchmark per-cell scores
+  **bit-for-bit** — on real SCimilarity, `max|Δ score| = 4.7e-9` against the exact
+  `build_candidate_params` + `m1_scores`. New helper `focal.centroid.mean_lognorm_centroid`; CLI
+  `focal score-cells --centroid {pseudobulk,mean_lognorm}` (default `pseudobulk`).
+- **The marker-selection line is untouched**: `centroid` defaults to `"pseudobulk"` everywhere and the
+  default attribution stays bit-identical to 0.3.0 — regression-guarded by
+  `test_selection_default_is_pseudobulk_unchanged`.
+
 ## 0.3.0
 
 - **Per-cell scoring (`focal.score_cells_attribution_weighted_expression`)**: companion to the

@@ -4,15 +4,17 @@ import numpy as np, pandas as pd
 import scipy.sparse as sp
 from .attribution import attribute
 from .composite import composite_weights
-from .centroid import pseudobulk_centroid
+from .centroid import pseudobulk_centroid, mean_lognorm_centroid
 from .contrast import resolve_reference
 from .io import gate_array, resolve_labels
 
-def cluster_attribution(enc, adata, cluster_key, reference="rest", device=None, gate="dC"):
+def cluster_attribution(enc, adata, cluster_key, reference="rest", device=None, gate="dC",
+                        centroid="pseudobulk"):
     """AttributionResult: φ per gene×cluster, REFERENCE baseline (research-consistent), dC>0-gated
-    rank by default (gate="phi" reproduces the legacy attribution-sign-gated rank)."""
+    rank by default (gate="phi" reproduces the legacy attribution-sign-gated rank). centroid passes
+    through to attribute() ('mean_lognorm' = benchmark-parity; default 'pseudobulk' unchanged)."""
     return attribute(enc, adata, cluster_key, target=None, reference=reference,
-                     device=device, baseline="reference", gate=gate)
+                     device=device, baseline="reference", gate=gate, centroid=centroid)
 
 def _weight_frame(result, adata, cluster_key, composite, layer, gate):
     if composite is None:
@@ -79,7 +81,7 @@ def _calibrate_columns(S, method):
 
 def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *,
                                                 reference="rest", calibrate=None, device=None,
-                                                gate="dC", _result=None):
+                                                gate="dC", centroid="pseudobulk", _result=None):
     """Per-CELL FOCAL scoring (companion to the per-cluster score_gene_set_focal). For candidate state
     c with marker panel G_c and cell i:
 
@@ -101,6 +103,11 @@ def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_se
         Label-free per-state rescale. Does NOT change per-state one-vs-rest AUROC (within-state order
         is preserved) but makes the cross-state argmax well-calibrated. 'zscore' is what our benchmark's
         top per-cell classifier uses -- pass it when you want the argmax label, leave None for raw scores.
+    centroid : 'pseudobulk' | 'mean_lognorm'
+        Reference-centroid recipe for BOTH the attribution phi and the per-cell C_ref. 'pseudobulk'
+        (default) is the FOCAL M0 pool-then-log denoised centroid. 'mean_lognorm' is the per-cell
+        benchmark's pool-after-log centroid (Xtr[ref].mean(0) on lognorm .X) -- pass it to bit-level
+        reproduce the benchmark/slides scoring numbers (see reproduce/). Default keeps prior behaviour.
     _result : AttributionResult, optional
         Precomputed cluster_attribution to reuse (skips the one attribution pass).
 
@@ -114,8 +121,11 @@ def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_se
     labelling/inspection. For an unbiased supervised benchmark, fit the attribution on a train split and
     score held-out cells (cross-validated), as in the FOCAL per-cell benchmark.
     """
+    if centroid not in ("pseudobulk", "mean_lognorm"):
+        raise ValueError(f"centroid must be 'pseudobulk' or 'mean_lognorm', got {centroid!r}")
+    _cref_fn = pseudobulk_centroid if centroid == "pseudobulk" else mean_lognorm_centroid
     res = _result if _result is not None else cluster_attribution(
-        enc, adata, cluster_key, reference, device, gate=gate)
+        enc, adata, cluster_key, reference, device, gate=gate, centroid=centroid)
     labels = resolve_labels(adata, cluster_key)
     counts = adata.X
     gpos = {g: i for i, g in enumerate(map(str, adata.var_names))}
@@ -128,7 +138,7 @@ def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_se
         if c not in res.attribution.columns:
             raise ValueError(f"state {c!r} was not attributed (have {list(res.attribution.columns)})")
         _, rmask = resolve_reference(labels, c, reference)
-        C_ref = pseudobulk_centroid(counts, rmask)
+        C_ref = _cref_fn(counts, rmask)
         phi = np.clip(res.attribution[c].to_numpy(), 0.0, None)          # positive channel
         present = list(dict.fromkeys(g for g in map(str, gene_sets[c]) if g in gpos))
         if not present:

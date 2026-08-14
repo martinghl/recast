@@ -1,6 +1,6 @@
 def test_version():
     import focal
-    assert focal.__version__ == "0.3.0"
+    assert focal.__version__ == "0.3.1"
 
 
 def test_torchfree_import():

@@ -1,5 +1,5 @@
 """FOCAL — Foundation-model Contrastive Attribution."""
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 from .io import AttributionResult
 from .composite import composite

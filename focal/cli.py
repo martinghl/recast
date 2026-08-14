@@ -55,7 +55,7 @@ def _cmd_score_cells(a):
     ref = a.reference if a.reference in ("siblings", "rest") else a.reference.split(",")
     cal = None if a.calibrate in ("none", "None") else a.calibrate
     P = score_cells_attribution_weighted_expression(enc, adata, a.cluster_key, gene_sets,
-                                                     reference=ref, calibrate=cal)
+                                                     reference=ref, calibrate=cal, centroid=a.centroid)
     P.insert(0, "predicted", P.idxmax(axis=1))
     P.to_csv(a.out, index_label="cell"); return 0
 
@@ -85,6 +85,8 @@ def main(argv=None):
                     help="JSON {state: [genes]} -- one curated panel per candidate state")
     sc.add_argument("--reference", default="rest"); sc.add_argument("--calibrate", default="zscore",
                     choices=["none", "zscore", "rank"], help="per-state rescale for the argmax (default zscore)")
+    sc.add_argument("--centroid", default="pseudobulk", choices=["pseudobulk", "mean_lognorm"],
+                    help="reference-centroid recipe; 'mean_lognorm' = benchmark-parity (reproduces slides)")
     sc.add_argument("--out", required=True); sc.set_defaults(fn=_cmd_score_cells)
     args = p.parse_args(argv)
     return args.fn(args)

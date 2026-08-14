@@ -102,3 +102,72 @@ def test_cli_score_cells(tmp_path):
     assert r.returncode == 0, r.stderr
     df = pd.read_csv(out)
     assert {"cell", "predicted", "A", "B", "C"} <= set(df.columns) and len(df) == 90
+
+
+# ------------------------------------------------ benchmark-parity centroid (mean_lognorm, v0.3.1)
+def test_mean_lognorm_centroid_pools_after_log():
+    """mean_lognorm_centroid = per-cell lognorm THEN mean (benchmark's Xtr[mask].mean(0)); genuinely
+    different from pseudobulk_centroid (pool counts THEN log) on a real fixture."""
+    from focal.centroid import pseudobulk_centroid, mean_lognorm_centroid
+    a = _planted()
+    counts = np.asarray(a.X, dtype="float32")
+    mask = a.obs["state"].to_numpy() == "A"
+    X = counts[mask]
+    tot = X.sum(1, keepdims=True); tot[tot == 0] = 1.0
+    expect = np.log1p(1e4 * X / tot).mean(0)
+    assert np.allclose(mean_lognorm_centroid(counts, mask), expect, atol=1e-6)
+    assert not np.allclose(mean_lognorm_centroid(counts, mask),
+                           pseudobulk_centroid(counts, mask), atol=1e-3)
+
+
+def test_selection_default_is_pseudobulk_unchanged():
+    """Regression guard for the marker-selection line: the default attribution is bit-identical to
+    explicitly requesting pseudobulk -> adding the parity option leaves selection untouched."""
+    a = _planted(); enc = StubEncoder(a.n_vars)
+    res_default = cluster_attribution(enc, a, "state", reference="rest")
+    res_pseudo = cluster_attribution(enc, a, "state", reference="rest", centroid="pseudobulk")
+    for c in res_default.attribution.columns:
+        assert np.array_equal(res_default.attribution[c].to_numpy(),
+                              res_pseudo.attribution[c].to_numpy())
+
+
+def test_parity_attribution_anchor_switches_to_mean_lognorm():
+    """centroid='mean_lognorm' moves the IG anchor+baseline onto the mean-of-lognorm centroids:
+    dC matches the hand recomputation and the attribution genuinely differs from pseudobulk."""
+    from focal.centroid import mean_lognorm_centroid
+    from focal.contrast import resolve_reference
+    a = _planted(); enc = StubEncoder(a.n_vars)
+    counts = np.asarray(a.X, dtype="float32")
+    labels = a.obs["state"].to_numpy().astype(str)
+    res_ml = cluster_attribution(enc, a, "state", reference="rest", centroid="mean_lognorm")
+    res_pb = cluster_attribution(enc, a, "state", reference="rest", centroid="pseudobulk")
+    for c in ["A", "B", "C"]:
+        tmask, rmask = resolve_reference(labels, c, "rest")
+        dC_expect = mean_lognorm_centroid(counts, tmask) - mean_lognorm_centroid(counts, rmask)
+        assert np.allclose(res_ml.dC[c].to_numpy(), dC_expect, atol=1e-6)
+    assert not np.allclose(res_ml.attribution.to_numpy(), res_pb.attribution.to_numpy(), atol=1e-4)
+
+
+def test_parity_score_cells_uses_mean_lognorm_cref():
+    """The benchmark-parity per-cell score: S_i(c)=mean_g max(0,x_ig-C_ref,g)*max(0,phi_c[g]) with
+    C_ref = mean-of-lognorm reference centroid (== focal_pcell_bench.m1_scores' C_ref). Pinned to a
+    hand recomputation, and shown to differ from the pseudobulk default path."""
+    from focal.centroid import mean_lognorm_centroid
+    from focal.contrast import resolve_reference
+    a = _planted(); enc = StubEncoder(a.n_vars)
+    res = cluster_attribution(enc, a, "state", reference="rest", centroid="mean_lognorm")
+    P = score_cells(enc, a, "state", PANELS, reference="rest", centroid="mean_lognorm", _result=res)
+    counts = np.asarray(a.X, dtype="float32")
+    tot = counts.sum(1, keepdims=True); tot[tot == 0] = 1.0
+    Xln = np.log1p(1e4 * counts / tot)
+    gpos = {g: i for i, g in enumerate(map(str, a.var_names))}
+    labels = a.obs["state"].to_numpy().astype(str)
+    for c in PANELS:
+        gidx = np.array([gpos[g] for g in PANELS[c]])
+        _, rmask = resolve_reference(labels, c, "rest")
+        C_ref = mean_lognorm_centroid(counts, rmask)
+        phi = np.clip(res.attribution[c].to_numpy(), 0.0, None)
+        h = np.clip(Xln[:, gidx] - C_ref[gidx], 0.0, None)
+        assert np.allclose(P[c].to_numpy(), (h * phi[gidx]).mean(1), atol=1e-5)
+    P_pb = score_cells(enc, a, "state", PANELS, reference="rest", centroid="pseudobulk")
+    assert not np.allclose(P.to_numpy(), P_pb.to_numpy(), atol=1e-4)
