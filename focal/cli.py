@@ -45,6 +45,20 @@ def _cmd_score_set(a):
     df = score_gene_set_panel(enc, adata, a.cluster_key, gene_sets, reference=ref, composites=tuple(comps))
     df.to_csv(a.out, index=False); return 0
 
+def _cmd_score_cells(a):
+    import json
+    from .io import read_h5ad
+    from .score import score_cells_attribution_weighted_expression
+    adata = read_h5ad(a.h5ad)
+    enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
+    gene_sets = json.load(open(a.gene_sets))
+    ref = a.reference if a.reference in ("siblings", "rest") else a.reference.split(",")
+    cal = None if a.calibrate in ("none", "None") else a.calibrate
+    P = score_cells_attribution_weighted_expression(enc, adata, a.cluster_key, gene_sets,
+                                                     reference=ref, calibrate=cal)
+    P.insert(0, "predicted", P.idxmax(axis=1))
+    P.to_csv(a.out, index_label="cell"); return 0
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="focal", description="Foundation-model Contrastive Attribution")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -64,5 +78,13 @@ def main(argv=None):
     s.add_argument("--cluster-key", required=True); s.add_argument("--gene-sets", required=True)
     s.add_argument("--reference", default="rest"); s.add_argument("--composites", default="bare,tauE_discrRU")
     s.add_argument("--out", required=True); s.set_defaults(fn=_cmd_score_set)
+    sc = sub.add_parser("score-cells")
+    sc.add_argument("--h5ad", required=True); sc.add_argument("--encoder", required=True,
+                    choices=["stub", "scimilarity", "ssl", "scvi"]); sc.add_argument("--model", default=None)
+    sc.add_argument("--cluster-key", required=True); sc.add_argument("--gene-sets", required=True,
+                    help="JSON {state: [genes]} -- one curated panel per candidate state")
+    sc.add_argument("--reference", default="rest"); sc.add_argument("--calibrate", default="zscore",
+                    choices=["none", "zscore", "rank"], help="per-state rescale for the argmax (default zscore)")
+    sc.add_argument("--out", required=True); sc.set_defaults(fn=_cmd_score_cells)
     args = p.parse_args(argv)
     return args.fn(args)

@@ -146,6 +146,21 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
   — `device` defaults to `"cuda"` if available, else `"cpu"`. Requires `[attribution]`.
 - `focal.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False) -> dict`
   — core-only, no torch.
+- `focal.score_gene_set_focal(enc, adata, cluster_key, gene_set, *, reference="rest", composite=None, layer=None, device=None, gate="dC") -> pd.DataFrame`
+  — **per-cluster** gene-set score: one row per cluster (`score_sum` / `score_mean` /
+  `score_frac`). `focal.score_gene_set_panel(...)` scores many sets × composite variants
+  in a single attribution pass. Requires `[attribution]`.
+- `focal.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC") -> pd.DataFrame`
+  — **per-cell** score `[n_cells × states]`:
+  `S_i(c) = mean_{g∈G_c} max(0, x_ig − C_ref,g) · max(0, φ_c[g])` — each panel gene's
+  reference-relative over-expression (per-cell tp10k-lognorm minus the reference denoised
+  pseudobulk), weighted by the FOCAL attribution `φ_c` (positive channel). `gene_sets` is
+  `{state: [genes]}` (one panel per candidate state); `P.idxmax(axis=1)` is the predicted
+  state per cell. `calibrate ∈ {None, 'zscore', 'rank'}` is a label-free per-state rescale
+  that calibrates the cross-state **argmax** without changing per-state one-vs-rest AUROC
+  (`'zscore'` is the benchmark's top per-cell classifier). Scores every cell with an
+  attribution fit on all cells (transductive); cross-validate for an unbiased benchmark.
+  Requires `[attribution]`.
 - `focal.AttributionResult` — dataclass: `attribution: pd.DataFrame`, `genes: dict`,
   `meta: dict`, `.top(state, k=20)`.
 - `focal.io.read_h5ad(path)`, `focal.io.write_attribution(result, path)`,
@@ -169,6 +184,14 @@ focal attribute --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
 focal composite --attr PATH --h5ad PATH --cluster-key KEY
                  [--mode {bare,tauE,discr,discrRU,tauE_discr,tauE_discrRU}]
                  --out-prefix PREFIX
+
+focal score-set  --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
+                 --cluster-key KEY --gene-sets panels.json [--reference rest]
+                 [--composites bare,tauE_discrRU] --out scores.csv          # PER-CLUSTER
+
+focal score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
+                 --cluster-key KEY --gene-sets panels.json [--reference rest]
+                 [--calibrate none|zscore|rank] --out cells.csv            # PER-CELL
 ```
 
 - `focal attribute` reads `--h5ad`, builds the requested encoder, runs `attribute()`,
@@ -185,5 +208,10 @@ focal composite --attr PATH --h5ad PATH --cluster-key KEY
   runs `composite(..., return_scores=True)`, and writes only
   `<out-prefix>_markers.csv` (it does not write a new `.h5ad`). `--mode` defaults to
   `tauE_discrRU`.
-- Both subcommands return `0` on success (see `focal.cli.main`); there is currently no
+- `focal score-set` reads `--h5ad`, builds the encoder, and writes a long-form
+  per-(gene-set × cluster) CSV (`score_gene_set_panel`). `focal score-cells` writes a
+  `[cell × state]` CSV with a leading `predicted` column (argmax of the state scores) —
+  `--gene-sets` is a JSON `{state: [genes]}` and `--calibrate` defaults to `zscore` (the
+  cross-state argmax calibration; use `none` for raw scores, `rank` for a rank transform).
+- All subcommands return `0` on success (see `focal.cli.main`); there is currently no
   non-zero exit path other than an uncaught exception from inside the library.

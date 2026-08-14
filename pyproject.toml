@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "focal"
-version = "0.2.0"
+version = "0.3.0"
 description = "Foundation-model Contrastive Attribution: genes that define a target-vs-reference cell state."
 readme = "README.md"
 requires-python = ">=3.10"

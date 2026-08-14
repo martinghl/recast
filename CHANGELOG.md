@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.3.0
+
+- **Per-cell scoring (`focal.score_cells_attribution_weighted_expression`)**: companion to the
+  per-cluster `score_gene_set_focal`. For candidate state `c` (curated panel `G_c`) and cell `i`,
+  `S_i(c) = mean_{g in G_c} max(0, x_ig − C_ref,g) · max(0, phi_c[g])` — each panel gene's
+  reference-relative over-expression (per-cell tp10k-lognorm minus the reference denoised pseudobulk),
+  weighted by the FOCAL contrastive attribution `phi_c` (positive channel), averaged over the panel.
+  Returns a `[n_cells × states]` DataFrame; `.idxmax(axis=1)` is the per-cell predicted state. Optional
+  label-free `calibrate={None,'zscore','rank'}` rescales each state column so the cross-state argmax is
+  well-calibrated without changing per-state one-vs-rest AUROC (`'zscore'` is the top per-cell classifier
+  in the FOCAL benchmark). Reuses a single `cluster_attribution` pass; zero new dependencies.
+- **CLI**: `focal score-cells --h5ad --encoder {stub,scimilarity,ssl,scvi} [--model] --cluster-key
+  --gene-sets panels.json [--reference rest] [--calibrate zscore] --out cells.csv`.
+
+## 0.2.0
+
+- **Correctness (`attribute` gate)**: default gene gate is now `dC>0` (gene genuinely up in target vs
+  reference pseudobulk), closing a sign-mismatch leak where a down-regulated gene with positive IG
+  attribution could enter ranked/composite/score outputs. `gate="phi"` keeps the legacy
+  attribution-sign rule as a back-compat escape hatch.
+- **Per-cluster scoring**: `score_gene_set_focal` / `score_gene_set_panel` (reference baseline, composite
+  weight ladder) and a `focal score-set` CLI; `focal.attribute` un-shadowed as a top-level export.
+
+## 0.1.0
 
 Initial FOCAL package.
 

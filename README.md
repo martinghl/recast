@@ -113,6 +113,13 @@ res.attribution                 # DataFrame: genes x attributed states, raw IG s
 
 mk = focal.composite(res, adata, "state", mode="tauE_discrRU")
 mk["CX3CR1+ CD8"][:20]          # top 20 markers after specificity/discriminativeness reweighting
+
+# PER-CELL scoring: score every cell against a curated panel per candidate state, then argmax.
+P = focal.score_cells_attribution_weighted_expression(
+        enc, adata, "state",
+        gene_sets={"CX3CR1+ CD8": [...], "CXCR6+ CD8": [...]},   # one panel per candidate state
+        reference="rest", calibrate="zscore")
+P.idxmax(axis=1)                # per-cell predicted state (argmax of the per-state scores)
 ```
 
 `adata` is an `AnnData` with raw (or size-consistent) counts in `.X` and the cluster /
