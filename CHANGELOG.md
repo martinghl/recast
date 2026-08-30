@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0
+
+- **New: contrast QC** (`focal/qc.py`). FOCAL's selection rides on one vector,
+  `u = mean(Z_target) − mean(Z_reference)`; when the two groups do not separate in the
+  representation, u is sampling noise and the returned panel is not about the target-vs-reference
+  distinction — with no visible symptom in the output (a swapped or degenerate contrast returns an
+  equally plausible-looking gene list). `attribute`/`cluster_attribution` now compute two
+  embedding-only diagnostics per state at negligible cost: **d′** (standardized target-vs-reference
+  separation along u) and **cos_u** (direction stability under random half-splits of the cells).
+  Results carry them as `result.qc` (a states × [n_target, n_reference, dprime, cos_u_mean,
+  cos_u_min] DataFrame), and unreliable contrasts raise a `ContrastQCWarning`
+  ("contrast direction is UNRELIABLE …"). Thresholds are calibrated on the published benches
+  (fs30 direction audit: healthy identity contrasts sit at cos_u ≥ 0.97, d′ ≈ 3; defaults warn at
+  cos_u < 0.9, d′ < 0.5, target < 20 cells).
+- New `qc=` parameter on `attribute`/`cluster_attribution`: `"warn"` (default — attach + warn),
+  `"silent"` (attach only), `"off"` (skip; `result.qc = None`). **Rankings, scores and all numbers
+  are unchanged in every mode** — QC is diagnosis only.
+- New standalone `focal.contrast_qc(enc, adata, cluster_key, target=..., reference=...)` — the same
+  diagnostics without running attribution, e.g. to ask "are clusters A and B separable enough for a
+  FOCAL contrast?" via `target="A", reference=["B"]`.
+- `AttributionResult` gains the `qc` field (default `None`; legacy/hand-built results unaffected).
+
 ## 0.4.0
 
 - **Default centroid is now `mean_lognorm`** on `attribute`, `cluster_attribution`, and

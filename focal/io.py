@@ -12,6 +12,9 @@ class AttributionResult:
     dC: pd.DataFrame = None              # index = genes, columns = states; centroid(target)-centroid(ref)
                                           # per gate: None if this result predates the dC>0 gate fix (e.g. a
                                           # hand-built/legacy result) -- gate_array() falls back to `phi` then.
+    qc: pd.DataFrame = None              # index = states, columns = focal.qc.QC_COLUMNS (contrast
+                                          # separability/direction-stability diagnostics); None when the
+                                          # attribution ran with qc="off" or on legacy/hand-built results.
     def top(self, state, k=20):
         return self.genes[state][:k]
 

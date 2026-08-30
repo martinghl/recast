@@ -1,5 +1,5 @@
 """FOCAL — Foundation-model Contrastive Attribution."""
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from .io import AttributionResult
 from .composite import composite
@@ -7,6 +7,7 @@ from .composite import composite
 _LAZY = {"attribute": ".attribution", "cluster_attribution": ".score",
          "score_gene_set_focal": ".score", "score_gene_set_panel": ".score",
          "score_cells_attribution_weighted_expression": ".score",
+         "contrast_qc": ".qc", "ContrastQCWarning": ".qc",
          "SCimilarityEncoder": ".encoders", "SSLEncoder": ".encoders",
          "SCVIEncoder": ".encoders", "StubEncoder": ".encoders", "Encoder": ".encoders"}
 
@@ -18,5 +19,6 @@ def __getattr__(name):
 
 __all__ = ["attribute", "composite", "cluster_attribution", "score_gene_set_focal",
            "score_gene_set_panel", "score_cells_attribution_weighted_expression",
+           "contrast_qc", "ContrastQCWarning",
            "SCimilarityEncoder", "SSLEncoder", "SCVIEncoder",
            "AttributionResult", "__version__"]
