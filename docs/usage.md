@@ -15,7 +15,13 @@ returns an `AttributionResult`:
 - Builds the target's denoised reference centroid — by default the mean of the target
   cells' per-cell `log1p(1e4 * proportion)` profiles (`centroid="mean_lognorm"`); the
   opt-in `centroid="pseudobulk"` pools counts before the log (`log1p(1e4 * gene_total /
-  total_counts)`) instead.
+  total_counts)`) instead. Manuscript mapping (current manuscript): the
+  population-level subtype marker-selection benchmark and the per-cell program
+  scoring both use the default `mean_lognorm` (selection's IG path runs from the
+  reference profile to the target profile, i.e. `baseline="reference"` — the
+  `cluster_attribution` default); the transitional cell-state (cycling) Extended
+  Data arm uses `centroid="pseudobulk"` + `baseline="reference"`. Pass the matching
+  recipe when reproducing published numbers.
 - Runs Integrated Gradients (zero baseline) on `f(x) = <enc.torch_encode(x), u>`
   evaluated at the centroid, producing one attribution value per gene.
 - Ranks **every** gene by attribution descending — `result.genes[state]` always

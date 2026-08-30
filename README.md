@@ -34,6 +34,17 @@ explicit, per gene:
    expression (`centroid="mean_lognorm"`) — so the attribution sees a stable population
    profile, not a single noisy cell. (`centroid="pseudobulk"` is an opt-in variant that
    pools counts *before* the log instead.)
+
+   **Which recipe reproduces which manuscript pipeline:** as of the current manuscript
+   the two headline pipelines share one profile — population-level subtype marker
+   selection *and* per-cell program scoring are both mean-of-lognorm
+   (`centroid="mean_lognorm"`, the library default; selection additionally runs the IG
+   path from the reference profile, i.e. `baseline="reference"`, which
+   `cluster_attribution` sets by default). The pooled proportion-then-log profile is
+   used in the manuscript by the transitional cell-state (cycling) Extended Data arm —
+   pass `centroid="pseudobulk", baseline="reference"` to reproduce that arm. The
+   recipes are close but not identical; don't mix them when comparing against
+   published numbers.
 3. **Attribute, don't just embed.** Run Integrated Gradients (from a zero baseline to
    the centroid) on the scalar `f(x) = <encoder(x), u>` — i.e. attribute *how much
    each gene's expression in the centroid pushes the embedding along the target
@@ -123,7 +134,9 @@ P = focal.score_cells_attribution_weighted_expression(
         reference="rest", calibrate="zscore")
 P.idxmax(axis=1)                # per-cell predicted state (argmax of the per-state scores)
 # The default centroid (mean of per-cell lognorm) bit-level reproduces our per-cell
-# benchmark/slides scores; centroid="pseudobulk" is the opt-in pool-before-log variant.
+# benchmark/slides scores, and is also the manuscript's selection centroid;
+# centroid="pseudobulk" is the pool-before-log variant used by the paper's
+# transitional-cell-state (cycling) Extended Data arm.
 # See CHANGELOG 0.4.0 and docs/usage.md.
 ```
 

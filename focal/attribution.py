@@ -43,9 +43,12 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
     picks up positive IG attribution (sign mismatch) leak into the ranked/composite/score outputs.
 
     centroid: 'mean_lognorm' (default) builds the IG target/baseline as the mean of the cells' per-cell
-    tp10k-lognorm profiles -- the recipe the research marker-selection + per-cell benchmark actually use,
-    so it reproduces the slides/benchmark numbers. 'pseudobulk' is the opt-in pool-counts-then-log
-    denoised profile (a distinct pool-BEFORE-log centroid).
+    tp10k-lognorm profiles. As of the current manuscript this is the paper's single headline centroid:
+    both the population-level subtype marker-selection benchmark and the per-cell scoring benchmark use
+    it (selection additionally runs the IG path from the REFERENCE profile, i.e. baseline='reference' --
+    cluster_attribution's default). 'pseudobulk' is the opt-in pool-counts-BEFORE-the-log profile; in
+    the manuscript it is used by the transitional-cell-state (cycling) Extended Data arm -- reproduce
+    that arm with centroid='pseudobulk', baseline='reference'.
 
     qc: 'warn' (default) computes the embedding-only contrast QC (focal.qc: d' separation +
     half-split cos_u direction stability) for every attributed state, attaches it as `result.qc`,
