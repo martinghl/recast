@@ -39,12 +39,13 @@ myst_heading_anchors = 3
 
 nb_execution_mode = "off"
 
-templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
 html_theme = "furo"
 html_title = f"FOCAL {release}"
-html_static_path = ["_static"]
+# No html_static_path / templates_path: neither directory has any content, and git does not
+# track empty directories -- declaring them made the local build pass while the build from a
+# fresh clone (i.e. Read the Docs, with fail_on_warning) failed on "entry does not exist".
 html_theme_options = {
     "source_repository": "https://github.com/martinghl/focal",
     "source_branch": "main",
