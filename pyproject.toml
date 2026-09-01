@@ -30,6 +30,7 @@ recast = "recast.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/martinghl/recast"
+Documentation = "https://screcast.readthedocs.io/"
 Repository = "https://github.com/martinghl/recast"
 Issues = "https://github.com/martinghl/recast/issues"
 
