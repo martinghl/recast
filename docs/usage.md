@@ -2,11 +2,12 @@
 
 This is the detailed reference for encoders, reference modes, the composite
 readout modes, and the Python/CLI surfaces. For the conceptual "what and why," see the
-[README](../README.md).
+[README](https://github.com/martinghl/focal#readme) in the repository root.
 
 ## Pipeline recap
 
-`focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None)`
+`focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None,
+baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn")`
 returns an `AttributionResult`:
 
 - For each target state, embeds the target cells and the reference cells with `enc`,
@@ -150,15 +151,20 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
 
 ## Python API reference
 
-- `focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None) -> AttributionResult`
-  — `device` defaults to `"cuda"` if available, else `"cpu"`. Requires `[attribution]`.
+- `focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn") -> AttributionResult`
+  — `device` defaults to `"cuda"` if available, else `"cpu"`; it selects where the
+  attribution runs and does **not** move a real encoder's weights. `baseline` is the IG
+  start point (`"zero"` | `"reference"`), `gate` the positive-channel rule (`"dC"` |
+  `"phi"`), `centroid` the reference-profile recipe (`"mean_lognorm"` | `"pseudobulk"`),
+  and `qc` the contrast diagnostics (`"warn"` | `"silent"` | `"off"`, attached as
+  `result.qc`). Requires `[attribution]`.
 - `focal.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False) -> dict`
   — core-only, no torch.
 - `focal.score_gene_set_focal(enc, adata, cluster_key, gene_set, *, reference="rest", composite=None, layer=None, device=None, gate="dC") -> pd.DataFrame`
   — **per-cluster** gene-set score: one row per cluster (`score_sum` / `score_mean` /
   `score_frac`). `focal.score_gene_set_panel(...)` scores many sets × composite variants
   in a single attribution pass. Requires `[attribution]`.
-- `focal.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC", centroid="mean_lognorm") -> pd.DataFrame`
+- `focal.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC", centroid="mean_lognorm", _result=None) -> pd.DataFrame`
   — **per-cell** score `[n_cells × states]`:
   `S_i(c) = mean_{g∈G_c} max(0, x_ig − C_ref,g) · max(0, φ_c[g])` — each panel gene's
   reference-relative over-expression (per-cell tp10k-lognorm minus the reference centroid),
