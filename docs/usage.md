@@ -47,7 +47,7 @@ Captum's `IntegratedGradients` attributes through.
 | Class | Constructor | Backing package | Notes |
 |---|---|---|---|
 | `StubEncoder` | `StubEncoder(n_genes, W=None)` | none (pure torch/numpy) | Deterministic identity-ish encoder: `embed = L2_normalize(log1p(X) @ W)`, `W` defaults to the identity matrix. Used by the test suite and `examples/demo.py`; not a real FM. |
-| `SCimilarityEncoder` | `SCimilarityEncoder(model_path)` | `scimilarity` (genentech/scimilarity `CellEmbedding`) | `model_path` is a directory containing `encoder.ckpt` / `gene_order.tsv` / `layer_sizes.json` / `label_ints.csv`. Raises `FileNotFoundError` if the path doesn't exist. |
+| `SCimilarityEncoder` | `SCimilarityEncoder(model_path, device=None, normalize=False)` | `scimilarity` (genentech/scimilarity `CellEmbedding`) | `model_path` is a directory containing `encoder.ckpt` / `gene_order.tsv` / `layer_sizes.json` / `label_ints.csv`. Raises `FileNotFoundError` if the path doesn't exist. Align the object to the model's `gene_order.tsv` yourself (`scimilarity.utils.align_dataset`). **Pass `normalize=True` when `.X` holds raw counts** — see below. |
 | `SSLEncoder` | `SSLEncoder(model_path)` | SIGnature's `SSLWrapper` (scTab/PBMC SSL-MLP) | SIGnature is **not** one of the `[attribution]` extras — it must already be importable, or set `FOCAL_SIGNATURE_SRC` to a checkout path and it's prepended to `sys.path` at construction time. `.embed()` batches through the reconstructed MLP directly (`SSLWrapper` exposes no `.embed()` of its own), `batch_size=512` by default. |
 | `SCVIEncoder` | `SCVIEncoder(model_or_adata)` | `scvi-tools` | Must be given an **already-trained** `scvi.model.SCVI` instance (raises `ValueError` otherwise — it will not train one for you). `.embed()` returns `get_latent_representation()`; `.torch_encode()` applies `log1p` first iff the module was trained with `log_variational` (the scvi-tools default), then returns the `z_encoder`'s posterior mean. |
 
@@ -70,6 +70,36 @@ auto-corrected. For real FM encoders, either load the FM onto the device you int
 pass to `attribute()`, or pass `device="cpu"` / `device="cuda"` explicitly to match
 wherever the FM already lives. `StubEncoder` has no persistent weights of its own, so
 it's device-agnostic — the test suite and `examples/demo.py` are unaffected.
+
+
+### `normalize=` for SCimilarity (v0.6.0)
+
+`attribute()` hands `adata.X` to two consumers with opposite input contracts: `enc.embed()`, which
+for SCimilarity needs per-cell tp10k-lognorm, and `focal.centroid.mean_lognorm_centroid`, which
+needs raw counts because it applies that normalization itself. The centroid it produces then goes
+to `enc.torch_encode()` **already normalized**.
+
+There is therefore one correct arrangement — keep `.X` raw, normalize inside `.embed()`, and never
+normalize in `.torch_encode()` — and `normalize=True` is what implements it:
+
+```python
+enc = focal.SCimilarityEncoder(MODEL, device="cuda", normalize=True)   # .X stays raw counts
+res = focal.attribute(enc, adata, "label", reference="siblings", device="cuda")
+```
+
+`normalize` deliberately affects `.embed()` only. It defaults to `False` so that code which
+already normalizes its own input — including the hand-written wrapper encoders this flag replaces
+— keeps working unchanged; the `focal attribute` CLI passes `normalize=True` for `scimilarity`,
+since the CLI's `--h5ad` is expected to hold raw counts.
+
+Getting it wrong is silent rather than loud. Normalizing `.X` up front *and* leaving
+`normalize=False` log-normalizes an already-log-normalized centroid: on a four-subtype lineage
+that perturbed roughly one in ten of each top-10 panel without raising, and the contrast QC could
+not see it (QC is computed from embeddings, which are correct on both paths).
+
+`.embed()` also densifies its input. That is load-bearing, not a convenience: scimilarity's
+`CellEmbedding.get_embeddings` tests `isinstance(X.data, zarr.core.Array)`, an attribute removed in
+zarr 3, so a sparse `.X` reaching it raises `AttributeError` on any modern zarr.
 
 ## Reference modes
 

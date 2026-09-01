@@ -40,7 +40,9 @@ finish on CPU.
 FOCAL ships no model weights. `SCimilarityEncoder` wants a directory containing
 `encoder.ckpt`, `gene_order.tsv`, `layer_sizes.json` and `label_ints.csv`, obtained from
 [genentech/scimilarity](https://github.com/genentech/scimilarity); the tutorials here use
-`model_v1.1`. `SSLEncoder` needs SIGnature importable (it is *not* one of the `[attribution]`
+`model_v1.1`. Align your object to that directory's `gene_order.tsv` and construct the encoder
+with `normalize=True` if `.X` holds raw counts ([usage](usage.md#normalize-for-scimilarity-v060)).
+`SSLEncoder` needs SIGnature importable (it is *not* one of the `[attribution]`
 extras — set `FOCAL_SIGNATURE_SRC` to a checkout if it is not on the path), and `SCVIEncoder`
 expects an already-trained `scvi.model.SCVI` instance rather than a path.
 

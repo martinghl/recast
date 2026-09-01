@@ -45,8 +45,8 @@ on cells that had no part in making it.
 
 Every code cell here was executed before publication and its **real output is committed with
 the notebook** — the numbers, tables and warnings you see are what the code printed, not
-illustrative placeholders. Tutorials 2 and 3 were run against SCimilarity `model_v1.1` on GPU
-over a 25,980-cell atlas; nothing is faked or elided.
+illustrative placeholders. Tutorials 2, 3 and 5 were run against SCimilarity `model_v1.1` on a
+GPU over real atlases — tutorial 5 across two independent studies; nothing is faked or elided.
 
 The documentation build does **not** re-execute them (`nb_execution_mode = "off"` in
 `conf.py`), because a docs builder has neither the model weights, the GPU, nor the

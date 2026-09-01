@@ -9,7 +9,11 @@ def _encoder(name, model, n_genes, adata=None):
     if name == "scvi":
         import scvi
         return encoders.SCVIEncoder(scvi.model.SCVI.load(model, adata=adata))
-    return {"scimilarity": encoders.SCimilarityEncoder, "ssl": encoders.SSLEncoder}[name](model)
+    if name == "scimilarity":
+        # The CLI's --h5ad is expected to hold raw counts (the contract the whole library states:
+        # the centroid recipes normalize .X themselves), so the encoder must normalize at embed().
+        return encoders.SCimilarityEncoder(model, normalize=True)
+    return {"ssl": encoders.SSLEncoder}[name](model)
 
 def _cmd_attribute(a):
     from .io import read_h5ad, write_attribution

@@ -34,27 +34,60 @@ class StubEncoder(Encoder):
         z = torch.log1p(x) @ W
         return z / (z.norm(dim=1, keepdim=True) + 1e-12)
 
+def prep_counts(counts, normalize):
+    """Dense float32 view of `counts`, optionally per-cell tp10k-log-normalized.
+
+    Densifying is not cosmetic: scimilarity's CellEmbedding.get_embeddings inspects `X.data` with
+    `isinstance(..., zarr.core.Array)`, which raises AttributeError on zarr >= 3 (the attribute was
+    removed). Any sparse matrix reaching it therefore crashes on a modern zarr, so we hand it a
+    dense array and the question never arises.
+
+    normalize=True applies log1p(1e4 * per-cell gene proportions), the input SCimilarity expects.
+    Empty cells (zero library) yield an all-zero row rather than a division by zero, matching
+    focal.centroid.mean_lognorm_centroid."""
+    X = counts.toarray() if sp.issparse(counts) else np.asarray(counts)
+    X = X.astype("float32")
+    if not normalize:
+        return X
+    totals = X.sum(axis=1, keepdims=True)
+    totals[totals == 0] = 1.0
+    return np.log1p(1e4 * X / totals).astype("float32")
+
 class SCimilarityEncoder(Encoder):
     """SCimilarity contrastive encoder (genentech/scimilarity CellEmbedding). Expects the model dir
     (containing encoder.ckpt / gene_order.tsv / layer_sizes.json / label_ints.csv).
 
-    Input contract for .embed()/.torch_encode(): SCimilarity requires gene-space-aligned, per-cell
-    tp10k-log-normalized expression (log1p(1e4 * per-cell gene proportions)), NOT raw counts --
-    neither method normalizes its input; callers must preprocess (see
-    scimilarity.utils.align_dataset / lognorm_counts) before calling either."""
-    def __init__(self, model_path, device=None):
+    Gene space: the model is a fixed-input network -- align the object to the model's
+    gene_order.tsv first (scimilarity.utils.align_dataset). This class does not do it for you.
+
+    Normalization is asymmetric between the two methods, because attribute() feeds them different
+    things from the same AnnData:
+
+      .embed(counts)     <- adata.X verbatim. SCimilarity needs per-cell tp10k-lognorm, so pass
+                            normalize=True when .X holds raw counts (the contract attribute()
+                            documents, since focal.centroid.mean_lognorm_centroid normalizes .X
+                            itself). Leave normalize=False only if you have already normalized .X.
+      .torch_encode(x)   <- the reference centroid, which mean_lognorm_centroid has ALREADY
+                            log-normalized. It must therefore never normalize, and does not --
+                            `normalize` deliberately does not affect it.
+
+    Getting this wrong is silent: normalizing .X up front and leaving normalize=False log-normalizes
+    an already-log-normalized centroid, which perturbs the ranking without raising, and the contrast
+    QC cannot see it (QC is computed from embeddings, which are correct either way)."""
+    def __init__(self, model_path, device=None, normalize=False):
         if not model_path or not os.path.exists(model_path):
             raise FileNotFoundError(f"SCimilarity model dir not found: {model_path!r}")
         from scimilarity.utils import lognorm_counts  # noqa: F401  (import validates the dep)
         from scimilarity import CellEmbedding
         self.device = torch.device(device) if device is not None else torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
+        self.normalize = bool(normalize)
         # use_gpu keeps CellEmbedding's own .get_embeddings() (used by .embed()) placing its input
         # profiles on the same device self._net (== self._ce.model, moved below) ends up on.
         self._ce = CellEmbedding(model_path, use_gpu=(self.device.type == "cuda"))
         self._net = self._ce.model.to(self.device)
     def embed(self, counts):
-        return np.asarray(self._ce.get_embeddings(counts))
+        return np.asarray(self._ce.get_embeddings(prep_counts(counts, self.normalize)))
     def torch_encode(self, x):
         dev = next(self._net.parameters()).device
         return self._net(x.to(dev))
