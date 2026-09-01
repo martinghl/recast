@@ -2,6 +2,11 @@
 
 **The genes that *define* a target-vs-reference cell state.**
 
+[![Documentation Status](https://readthedocs.org/projects/scfocal/badge/?version=latest)](https://scfocal.readthedocs.io/en/latest/)
+
+**Documentation and tutorials: <https://scfocal.readthedocs.io/>** — five notebooks, each
+published with the output it actually produced.
+
 FOCAL is a standalone, self-contained method for turning a single-cell foundation
 model's (FM's) embedding into a ranked list of marker genes for one cell state versus
 a chosen reference. It has no dependency on, and is not an add-on or extension of, any
