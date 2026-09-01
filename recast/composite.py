@@ -1,4 +1,4 @@
-"""Optional marker-specialization layer: reweight the gate-passing FOCAL attribution (dC>0 by default --
+"""Optional marker-specialization layer: reweight the gate-passing RECAST attribution (dC>0 by default --
 see gate= below; phi>0 is the legacy back-compat rule) by expression-specificity (tauE) and/or
 discriminativeness (discr / runner-up discrRU). Frozen from compute_fs_composite.py. Core (numpy)."""
 import numpy as np

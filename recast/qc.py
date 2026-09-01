@@ -1,6 +1,6 @@
 """Contrast QC — is a target-vs-reference contrast direction estimable at all?
 
-FOCAL's whole selection rides on one vector, u = mean(Z_target) - mean(Z_reference). When the two
+RECAST's whole selection rides on one vector, u = mean(Z_target) - mean(Z_reference). When the two
 groups genuinely separate in the representation, u is pinned by that separation; when they do not,
 u is sampling noise pointing somewhere arbitrary, and the ranked genes are not about the
 target-vs-reference distinction at all — with no visible symptom in the output (the positive
@@ -14,7 +14,7 @@ regime, per state:
               re-estimated on each half-cohort, and cos(u_A, u_B) is averaged over `n_splits`
               random splits. ~1 = the direction is reproducible; ~0 = coin-flip regime.
 
-Calibration (fs30 direction audit, 2026-08-30, over the published FOCAL benches): every healthy
+Calibration (fs30 direction audit, 2026-08-30, over the published RECAST benches): every healthy
 identity contrast sits at cos_u >= 0.97 with d' ~ 3 (fine-subtype median 2.99, broad 3.40; even
 the fair cell-cycle contrasts are >= 0.875); the only unit measured below 0.9 was a 20-cell
 cluster, i.e. half-split sampling noise. The default thresholds are therefore far outside the
@@ -33,7 +33,7 @@ QC_MODES = ("warn", "silent", "off")
 
 
 class ContrastQCWarning(UserWarning):
-    """A contrast failed the direction-reliability QC (see focal.qc)."""
+    """A contrast failed the direction-reliability QC (see recast.qc)."""
 
 
 def qc_from_embeddings(Z_target, Z_reference, n_splits=10, seed=0):
@@ -102,7 +102,7 @@ def contrast_qc(enc, adata, cluster_key, target=None, reference="siblings",
                 n_splits=10, seed=0):
     """Standalone embedding-only QC (no attribution): DataFrame indexed by state, QC_COLUMNS.
 
-    Answers "are these two groups separable enough for a FOCAL contrast?" without running IG —
+    Answers "are these two groups separable enough for a RECAST contrast?" without running IG —
     e.g. `contrast_qc(enc, adata, "state", target="A", reference=["B"])` for one cluster pair,
     or with defaults for every state vs its siblings (the same contrasts cluster_attribution
     would attribute)."""

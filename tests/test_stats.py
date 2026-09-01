@@ -1,5 +1,5 @@
 import numpy as np
-from focal.stats import tauE, mw_auc
+from recast.stats import tauE, mw_auc
 
 def test_tauE_extremes():
     # gene only in one cluster -> tau 1; uniform gene -> tau 0

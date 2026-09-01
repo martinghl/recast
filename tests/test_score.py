@@ -1,7 +1,7 @@
 import numpy as np, pandas as pd, anndata as ad
-from focal.encoders import StubEncoder
-from focal.io import AttributionResult
-from focal.score import score_gene_set_focal, score_gene_set_panel
+from recast.encoders import StubEncoder
+from recast.io import AttributionResult
+from recast.score import score_gene_set_recast, score_gene_set_panel
 
 def _planted():
     """3 clusters (not 2): A over-expresses g0,g1 ; B over-expresses g3,g4 ; C over-expresses g2,g5.
@@ -21,7 +21,7 @@ def _planted():
 
 def test_normalizations_and_planted_signal():
     a = _planted(); enc = StubEncoder(a.n_vars)
-    df = score_gene_set_focal(enc, a, "state", ["g0", "g1"], reference="rest")
+    df = score_gene_set_recast(enc, a, "state", ["g0", "g1"], reference="rest")
     assert list(df.columns) == ["cluster", "n_genes_found", "score_sum", "score_mean", "score_frac"]
     assert set(df["cluster"]) == {"A", "B", "C"}
     # mean == sum / n_found ; frac == sum / total-positive-mass  (0<=frac<=1)
@@ -35,7 +35,7 @@ def test_normalizations_and_planted_signal():
 
 def test_missing_genes_are_dropped():
     a = _planted(); enc = StubEncoder(a.n_vars)
-    df = score_gene_set_focal(enc, a, "state", ["g0", "NOT_A_GENE"], reference="rest")
+    df = score_gene_set_recast(enc, a, "state", ["g0", "NOT_A_GENE"], reference="rest")
     assert (df["n_genes_found"] == 1).all()
 
 def test_duplicate_genes_are_deduped():
@@ -43,7 +43,7 @@ def test_duplicate_genes_are_deduped():
     and must not push score_frac above 1.0. Without dedup, g0 counted 4x while `total` (the
     cluster's whole positive mass, counted once) stays fixed, so frac = 4*w/total can exceed 1."""
     a = _planted(); enc = StubEncoder(a.n_vars)
-    df = score_gene_set_focal(enc, a, "state", ["g0", "g0", "g0", "g1"], reference="rest")
+    df = score_gene_set_recast(enc, a, "state", ["g0", "g0", "g0", "g1"], reference="rest")
     assert (df["n_genes_found"] == 2).all()
     assert (df["score_frac"] <= 1.0 + 1e-6).all()
 
@@ -59,7 +59,7 @@ def test_bare_score_is_signed_attribution_within_dC_gate_not_clipped():
     dC = pd.DataFrame({"C1": [3.0, 1.0, -2.0]}, index=genes)
     res = AttributionResult(attr, {"C1": genes}, {}, dC=dC)
 
-    df_dC = score_gene_set_focal(None, None, None, genes, _result=res)
+    df_dC = score_gene_set_recast(None, None, None, genes, _result=res)
     row = df_dC.set_index("cluster").loc["C1"]
     assert row.n_genes_found == 3
     # sum = 2.0 (g_up_pos, kept) + (-1.0) (g_up_neg, kept SIGNED, not clipped to 0) + 0.0 (g_leak, gated)
@@ -68,7 +68,7 @@ def test_bare_score_is_signed_attribution_within_dC_gate_not_clipped():
     # total positive mass = max(2,0)+max(-1,0)+max(0,0) = 2.0 -> frac = 1.0/2.0
     assert abs(row.score_frac - 0.5) < 1e-9
 
-    df_phi = score_gene_set_focal(None, None, None, genes, _result=res, gate="phi")
+    df_phi = score_gene_set_recast(None, None, None, genes, _result=res, gate="phi")
     row_phi = df_phi.set_index("cluster").loc["C1"]
     # legacy gate: g_up_neg excluded (a<=0 -> 0.0), g_leak INCLUDED (a=5.0>0) -- the leak
     assert abs(row_phi.score_sum - 7.0) < 1e-9
@@ -89,7 +89,7 @@ def test_score_frac_zero_when_cluster_has_no_positive_mass():
     # would fall back to phi anyway but emit a RuntimeWarning (see io.gate_array) -- this test is
     # about the score_frac=0.0 guard, not the warning, so pin gate="phi" explicitly (numerically
     # identical fallback value) to keep it warning-free.
-    df = score_gene_set_focal(None, None, None, ["g0"], _result=res, gate="phi")
+    df = score_gene_set_recast(None, None, None, ["g0"], _result=res, gate="phi")
     row = df.set_index("cluster").loc["B"]
     assert row.n_genes_found == 1
     assert row.score_sum == 0.0
@@ -115,9 +115,9 @@ def test_cli_score_set(tmp_path):
     a = _planted(); h5 = tmp_path/"toy.h5ad"; a.write_h5ad(h5)
     panels = tmp_path/"panels.json"; panels.write_text(json.dumps({"sigA": ["g0","g1"], "sigB": ["g3","g4"]}))
     out = tmp_path/"scores.csv"
-    r = subprocess.run([sys.executable, "-m", "focal", "score-set", "--h5ad", str(h5),
+    r = subprocess.run([sys.executable, "-m", "recast", "score-set", "--h5ad", str(h5),
                         "--encoder", "stub", "--cluster-key", "state", "--gene-sets", str(panels),
-                        "--out", str(out)], capture_output=True, text=True, cwd="/data/gli9/test_sig/focal")
+                        "--out", str(out)], capture_output=True, text=True, cwd="/data/gli9/test_sig/recast")
     assert r.returncode == 0, r.stderr
     import pandas as pd; df = pd.read_csv(out)
     assert {"variant","signature","cluster","score_sum"} <= set(df.columns) and len(df) > 0

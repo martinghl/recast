@@ -1,0 +1,113 @@
+{
+  "annotation": {
+    "B intermediate": "intermediate",
+    "B memory": "memory",
+    "B naive": "naive"
+  },
+  "balanced_acc": 1.0,
+  "clusters": [
+    "B intermediate",
+    "B memory",
+    "B naive"
+  ],
+  "key": "pbmcbmn_l2",
+  "per_cell_balanced_acc": 0.7588416561599812,
+  "per_cell_balanced_acc_pseudobulk": 0.7691554799195819,
+  "recall": {
+    "B intermediate": 0.3333333333333333,
+    "B memory": 0.5833333333333334,
+    "B naive": 0.7857142857142857
+  },
+  "recall_mean": 0.5674603174603176,
+  "score_matrix": {
+    "intermediate": {
+      "B intermediate": 0.0013242784178441132,
+      "B memory": 0.0031022523146619053,
+      "B naive": 0.0002489222802667009
+    },
+    "memory": {
+      "B intermediate": 0.001125669464443516,
+      "B memory": 0.0033345948758340487,
+      "B naive": 0.0
+    },
+    "naive": {
+      "B intermediate": -0.00030762470035138615,
+      "B memory": 0.0,
+      "B naive": 0.007092056597230189
+    }
+  },
+  "selection": {
+    "B intermediate": [
+      "TNFRSF13B",
+      "AIM2",
+      "CLECL1",
+      "GPR183",
+      "CD27",
+      "CCDC50",
+      "COTL1",
+      "LINC01857",
+      "CD82",
+      "MARCKS",
+      "ACP5",
+      "CTSH",
+      "IGHG1",
+      "JCHAIN",
+      "IGHG2",
+      "FCRL2",
+      "VOPP1",
+      "TBC1D9",
+      "SP140",
+      "CD1C"
+    ],
+    "B memory": [
+      "AIM2",
+      "LINC01781",
+      "TNFRSF13B",
+      "IGHA1",
+      "ITGB1",
+      "SSPN",
+      "IGHA2",
+      "SCIMP",
+      "COCH",
+      "TEX9",
+      "CLECL1",
+      "CD27",
+      "IGHG1",
+      "ANXA2",
+      "CD82",
+      "GPR183",
+      "CPNE5",
+      "BLK",
+      "JCHAIN",
+      "CRIP1"
+    ],
+    "B naive": [
+      "TCL1A",
+      "IGHD",
+      "IGHM",
+      "FCER2",
+      "PLPP5",
+      "YBX3",
+      "IL4R",
+      "AL139020.1",
+      "PCDH9",
+      "CD72",
+      "FCRL1",
+      "BACH2",
+      "CXCR4",
+      "BCL7A",
+      "H1FX",
+      "COL19A1",
+      "APLP2",
+      "HVCN1",
+      "CDCA7L",
+      "TSPAN13"
+    ]
+  },
+  "topk": 20,
+  "truth": {
+    "B intermediate": "intermediate",
+    "B memory": "memory",
+    "B naive": "naive"
+  }
+}

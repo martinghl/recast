@@ -1,8 +1,8 @@
-# Read the Docs build configuration for FOCAL.
+# Read the Docs build configuration for RECAST.
 #
-# The package itself is deliberately NOT installed here. Nothing in docs/ imports focal:
-# conf.py reads the version out of focal/__init__.py as text, there is no autodoc, and the
-# notebooks ship with their outputs already stored. Installing focal[attribution] would drag
+# The package itself is deliberately NOT installed here. Nothing in docs/ imports recast:
+# conf.py reads the version out of recast/__init__.py as text, there is no autodoc, and the
+# notebooks ship with their outputs already stored. Installing recast[attribution] would drag
 # torch + scimilarity + scvi-tools onto the builder to produce exactly zero additional output.
 version: 2
 

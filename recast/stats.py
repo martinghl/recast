@@ -1,4 +1,4 @@
-"""Vendored, dependency-free primitives for the composite layer (reimplemented so FOCAL never imports scattr)."""
+"""Vendored, dependency-free primitives for the composite layer (reimplemented so RECAST never imports scattr)."""
 import numpy as np
 from scipy.stats import rankdata
 

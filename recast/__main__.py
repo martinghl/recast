@@ -1,4 +1,4 @@
-"""Enable `python -m focal` as an alias for the `focal` console script."""
+"""Enable `python -m recast` as an alias for the `recast` console script."""
 import sys
 
 from .cli import main

@@ -1,9 +1,11 @@
-# FOCAL
+# RECAST
 
-**Fo**undation-model **C**ontrastive **A**ttribution — the genes that separate a target cell
-population from a reference you choose, and a frozen program you can score on new cells.
+**RE**ference-**C**onditioned **A**ttribution of **S**ingle-cell **T**ranscriptomes
 
-FOCAL turns a learned single-cell representation plus a cell annotation into two connected
+The genes that separate a target cell population from a reference you choose, and a frozen
+program you can score on new cells.
+
+RECAST turns a learned single-cell representation plus a cell annotation into two connected
 outputs:
 
 ::::::{grid} 2
@@ -11,7 +13,7 @@ outputs:
 
 :::::{grid-item-card} Selection
 You state the biological alternative — sibling subtypes, the rest of the atlas, or any custom
-reference — and FOCAL attributes the encoded target-versus-reference contrast to genes.
+reference — and RECAST attributes the encoded target-versus-reference contrast to genes.
 **Changing only the reference moves the explanation** between a fine-subtype program and a
 broad-identity one, which makes the comparison an explicit part of the query rather than an
 assumption buried in the method.
@@ -39,12 +41,12 @@ contrast, so the program you score is the program you selected.
 
 ## Honest scope
 
-FOCAL is aimed at *local* contrasts — sibling subtypes inside a lineage, where broad lineage
+RECAST is aimed at *local* contrasts — sibling subtypes inside a lineage, where broad lineage
 signal dominates a marginal ranking and the subtype-defining program is weak, distributed, or
 carried by only some of the cells. On broad cell-type identities and on strong-marker
-populations, ordinary differential expression is already effective and FOCAL is comparable
+populations, ordinary differential expression is already effective and RECAST is comparable
 rather than better. For transitional programs that cut across identities, such as cell-cycle
-phase, classical differential expression remains the stronger tool. FOCAL also needs a
+phase, classical differential expression remains the stronger tool. RECAST also needs a
 differentiable encoder with meaningful gradients over the genes you care about, and the quality
 of an explanation depends on whether the reference you chose is a biologically sensible
 alternative — which is what [Tutorial 4](tutorials/04_contrast_qc) is about.

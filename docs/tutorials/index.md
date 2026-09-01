@@ -2,7 +2,7 @@
 
 Five notebooks, ordered so that each one earns the next. They are not five views of the same
 "hello world": tutorial 1 gets you a result, 2 gets you a *real* result, and 3–5 cover the three
-things that actually distinguish FOCAL from running a differential-expression test — choosing
+things that actually distinguish RECAST from running a differential-expression test — choosing
 what to compare against, knowing when the comparison is degenerate, and reusing a frozen panel
 on cells that had no part in making it.
 
@@ -17,7 +17,7 @@ on cells that had no part in making it.
 * - 1
   - [Quickstart](01_quickstart)
   - CPU. No downloads.
-  - A panel out of `focal.attribute` in under a minute, and a feel for the three objects the
+  - A panel out of `recast.attribute` in under a minute, and a feel for the three objects the
     API hands back.
 * - 2
   - [Selecting subtype markers](02_subtype_markers)
@@ -28,7 +28,7 @@ on cells that had no part in making it.
   - [Choosing the reference](03_choosing_the_reference)
   - same as 2
   - One population explained four different ways by changing one argument, and how to hand
-    FOCAL a reference you construct yourself rather than one from your annotation.
+    RECAST a reference you construct yourself rather than one from your annotation.
 * - 4
   - [Contrast QC](04_contrast_qc)
   - CPU for the demo

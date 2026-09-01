@@ -1,0 +1,25 @@
+# RECAST reproduction environment (CPU-only, deterministic) — pinned to the versions the committed
+# results were produced with. Install into a FRESH venv, then install the recast package itself:
+#
+#     python -m venv .venv && source .venv/bin/activate
+#     pip install -r requirements.txt
+#     pip install ./dist/recast-*.whl                    # BUNDLED next to this file; works on any machine.
+#                                                        # (Do NOT `pip install recast` from PyPI/GitHub —
+#                                                        #  that gives the older 0.1.0 without the scoring API.)
+#     python reproduce_recast.py           # -> PASS
+#
+# torch: the reproduction pins device="cpu" and needs no GPU. On a CPU-only machine, install the CPU
+# wheel instead of the default CUDA build:
+#     pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+#
+# scvi-tools is intentionally NOT listed: the reproduction uses only the SCimilarity encoder, so the
+# recast[attribution] extra's scvi-tools dependency is unnecessary here.
+numpy==2.4.6
+scipy==1.17.1
+pandas==2.3.3
+scikit-learn==1.9.0
+anndata==0.12.19
+scanpy==1.11.5
+torch==2.5.1
+captum==0.7.0
+scimilarity==0.4.1

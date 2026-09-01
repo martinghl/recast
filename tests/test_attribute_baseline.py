@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-from focal.attribution import _attribute_one
-from focal.encoders import StubEncoder  # identity encoder, no weights
+from recast.attribution import _attribute_one
+from recast.encoders import StubEncoder  # identity encoder, no weights
 
 def _toy():
     rng = np.random.default_rng(0)

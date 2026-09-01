@@ -1,4 +1,4 @@
-"""Core FOCAL: contrast direction u in an encoder's embedding, then IG-attribute the target-state
+"""Core RECAST: contrast direction u in an encoder's embedding, then IG-attribute the target-state
 reference centroid (mean of per-cell lognorm by default) through f(x)=<enc(x),u>, gated per target state
 (dC>0 by default -- see gate= below). Needs the [attribution] extra."""
 import numpy as np
@@ -50,7 +50,7 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
     the manuscript it is used by the transitional-cell-state (cycling) Extended Data arm -- reproduce
     that arm with centroid='pseudobulk', baseline='reference'.
 
-    qc: 'warn' (default) computes the embedding-only contrast QC (focal.qc: d' separation +
+    qc: 'warn' (default) computes the embedding-only contrast QC (recast.qc: d' separation +
     half-split cos_u direction stability) for every attributed state, attaches it as `result.qc`,
     and emits a ContrastQCWarning for any state whose contrast direction is unreliable (target and
     reference inseparable in the representation) -- the rankings themselves are never changed.

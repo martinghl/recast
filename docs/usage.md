@@ -1,12 +1,12 @@
-# FOCAL usage reference
+# RECAST usage reference
 
 This is the detailed reference for encoders, reference modes, the composite
 readout modes, and the Python/CLI surfaces. For the conceptual "what and why," see the
-[README](https://github.com/martinghl/focal#readme) in the repository root.
+[README](https://github.com/martinghl/recast#readme) in the repository root.
 
 ## Pipeline recap
 
-`focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None,
+`recast.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None,
 baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn")`
 returns an `AttributionResult`:
 
@@ -37,7 +37,7 @@ sorted; `result.top(state, k=20)` is `result.genes[state][:k]`.
 
 ## Encoders
 
-All encoder classes live in `focal.encoders` and require `pip install
+All encoder classes live in `recast.encoders` and require `pip install
 ".[attribution]"` (the module imports `torch` unconditionally — this is true even for
 `StubEncoder`). Each implements `.embed(counts) -> np.ndarray` (expected L2-normalized,
 `(n_cells, n_latent)`) and `.torch_encode(x) -> Tensor` (the differentiable path IG runs
@@ -48,7 +48,7 @@ Captum's `IntegratedGradients` attributes through.
 |---|---|---|---|
 | `StubEncoder` | `StubEncoder(n_genes, W=None)` | none (pure torch/numpy) | Deterministic identity-ish encoder: `embed = L2_normalize(log1p(X) @ W)`, `W` defaults to the identity matrix. Used by the test suite and `examples/demo.py`; not a real FM. |
 | `SCimilarityEncoder` | `SCimilarityEncoder(model_path, device=None, normalize=False)` | `scimilarity` (genentech/scimilarity `CellEmbedding`) | `model_path` is a directory containing `encoder.ckpt` / `gene_order.tsv` / `layer_sizes.json` / `label_ints.csv`. Raises `FileNotFoundError` if the path doesn't exist. Align the object to the model's `gene_order.tsv` yourself (`scimilarity.utils.align_dataset`). **Pass `normalize=True` when `.X` holds raw counts** — see below. |
-| `SSLEncoder` | `SSLEncoder(model_path)` | SIGnature's `SSLWrapper` (scTab/PBMC SSL-MLP) | SIGnature is **not** one of the `[attribution]` extras — it must already be importable, or set `FOCAL_SIGNATURE_SRC` to a checkout path and it's prepended to `sys.path` at construction time. `.embed()` batches through the reconstructed MLP directly (`SSLWrapper` exposes no `.embed()` of its own), `batch_size=512` by default. |
+| `SSLEncoder` | `SSLEncoder(model_path)` | SIGnature's `SSLWrapper` (scTab/PBMC SSL-MLP) | SIGnature is **not** one of the `[attribution]` extras — it must already be importable, or set `RECAST_SIGNATURE_SRC` to a checkout path and it's prepended to `sys.path` at construction time. `.embed()` batches through the reconstructed MLP directly (`SSLWrapper` exposes no `.embed()` of its own), `batch_size=512` by default. |
 | `SCVIEncoder` | `SCVIEncoder(model_or_adata)` | `scvi-tools` | Must be given an **already-trained** `scvi.model.SCVI` instance (raises `ValueError` otherwise — it will not train one for you). `.embed()` returns `get_latent_representation()`; `.torch_encode()` applies `log1p` first iff the module was trained with `log_variational` (the scvi-tools default), then returns the `z_encoder`'s posterior mean. |
 
 The CLI's `--encoder scvi` path additionally resolves a `--model` *path* into a live
@@ -75,7 +75,7 @@ it's device-agnostic — the test suite and `examples/demo.py` are unaffected.
 ### `normalize=` for SCimilarity (v0.6.0)
 
 `attribute()` hands `adata.X` to two consumers with opposite input contracts: `enc.embed()`, which
-for SCimilarity needs per-cell tp10k-lognorm, and `focal.centroid.mean_lognorm_centroid`, which
+for SCimilarity needs per-cell tp10k-lognorm, and `recast.centroid.mean_lognorm_centroid`, which
 needs raw counts because it applies that normalization itself. The centroid it produces then goes
 to `enc.torch_encode()` **already normalized**.
 
@@ -83,13 +83,13 @@ There is therefore one correct arrangement — keep `.X` raw, normalize inside `
 normalize in `.torch_encode()` — and `normalize=True` is what implements it:
 
 ```python
-enc = focal.SCimilarityEncoder(MODEL, device="cuda", normalize=True)   # .X stays raw counts
-res = focal.attribute(enc, adata, "label", reference="siblings", device="cuda")
+enc = recast.SCimilarityEncoder(MODEL, device="cuda", normalize=True)   # .X stays raw counts
+res = recast.attribute(enc, adata, "label", reference="siblings", device="cuda")
 ```
 
 `normalize` deliberately affects `.embed()` only. It defaults to `False` so that code which
 already normalizes its own input — including the hand-written wrapper encoders this flag replaces
-— keeps working unchanged; the `focal attribute` CLI passes `normalize=True` for `scimilarity`,
+— keeps working unchanged; the `recast attribute` CLI passes `normalize=True` for `scimilarity`,
 since the CLI's `--h5ad` is expected to hold raw counts.
 
 Getting it wrong is silent rather than loud. Normalizing `.X` up front *and* leaving
@@ -103,7 +103,7 @@ zarr 3, so a sparse `.X` reaching it raises `AttributeError` on any modern zarr.
 
 ## Reference modes
 
-`reference` (Python) / `--reference` (CLI), resolved by `focal.contrast.resolve_reference`:
+`reference` (Python) / `--reference` (CLI), resolved by `recast.contrast.resolve_reference`:
 
 | Value | Meaning |
 |---|---|
@@ -128,12 +128,12 @@ cells.
 `cluster_key` is normally a column name in `adata.obs`. As a convenience, if
 `cluster_key` is a string ending in `.txt`, it's instead treated as a path to a
 plain-text file of one label per line (aligned by row order to `adata`'s cells) —
-this path exists in `focal.io.resolve_labels` but is not covered by the test suite, so
+this path exists in `recast.io.resolve_labels` but is not covered by the test suite, so
 treat it as unverified if you rely on it.
 
 ## Composite modes
 
-`focal.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None,
+`recast.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None,
 return_scores=False)` reweights the **positive-channel** attribution
 (`ap = max(attribution, 0)`) by per-gene expression-specificity and/or
 discriminativeness factors computed from `adata` (or `adata.layers[layer]` if given),
@@ -149,7 +149,7 @@ unconditionally before the mode is selected).
 
 | Mode | Weight (before positive-channel gating) | What it rewards |
 |---|---|---|
-| `bare` | `attribution` (raw, unweighted) | Nothing extra — pure FOCAL attribution. |
+| `bare` | `attribution` (raw, unweighted) | Nothing extra — pure RECAST attribution. |
 | `tauE` | `ap * tau` | Expression specificity: genes expressed narrowly in this state (Tau index, 0=ubiquitous .. 1=exclusive) score higher. |
 | `discr` | `ap * discr` | One-vs-rest discriminativeness: rescaled Mann-Whitney AUC of this state's expression vs. every other cell pooled. |
 | `discrRU` | `ap * discrRU` | Discriminativeness against the single hardest **runner-up** state (the other state with the next-highest mean expression of that gene), instead of vs. all other cells pooled — stricter than `discr` when one specific competitor state is the real confusion risk. |
@@ -158,7 +158,7 @@ unconditionally before the mode is selected).
 
 Where, per gene:
 
-- `tau` = Tau specificity index (`focal.stats.tauE`) over the `(n_states, n_genes)`
+- `tau` = Tau specificity index (`recast.stats.tauE`) over the `(n_states, n_genes)`
   matrix of per-state mean log-expression.
 - `discr[s]` = `max(0, 2 * mw_auc(expr in state s, expr in all other cells) - 1)`.
 - `discrRU[s]` = same rescaled-AUC formula, but computed only against the cells of that
@@ -168,7 +168,7 @@ Where, per gene:
 `return_scores=True` returns `{state: [(gene, weighted_score), ...]}` instead of
 `{state: [gene, ...]}` — this is what the CLI uses internally so the markers CSV's
 `score` column reflects the mode-weighted composite score (not the raw attribution)
-after `focal composite`.
+after `recast composite`.
 
 **Alignment gotcha:** `composite()` does not re-align genes by name. It assumes
 `result.attribution.index` and `adata.var_names` refer to the same genes **in the same
@@ -181,24 +181,24 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
 
 ## Python API reference
 
-- `focal.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn") -> AttributionResult`
+- `recast.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn") -> AttributionResult`
   — `device` defaults to `"cuda"` if available, else `"cpu"`; it selects where the
   attribution runs and does **not** move a real encoder's weights. `baseline` is the IG
   start point (`"zero"` | `"reference"`), `gate` the positive-channel rule (`"dC"` |
   `"phi"`), `centroid` the reference-profile recipe (`"mean_lognorm"` | `"pseudobulk"`),
   and `qc` the contrast diagnostics (`"warn"` | `"silent"` | `"off"`, attached as
   `result.qc`). Requires `[attribution]`.
-- `focal.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False) -> dict`
+- `recast.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False) -> dict`
   — core-only, no torch.
-- `focal.score_gene_set_focal(enc, adata, cluster_key, gene_set, *, reference="rest", composite=None, layer=None, device=None, gate="dC") -> pd.DataFrame`
+- `recast.score_gene_set_recast(enc, adata, cluster_key, gene_set, *, reference="rest", composite=None, layer=None, device=None, gate="dC") -> pd.DataFrame`
   — **per-cluster** gene-set score: one row per cluster (`score_sum` / `score_mean` /
-  `score_frac`). `focal.score_gene_set_panel(...)` scores many sets × composite variants
+  `score_frac`). `recast.score_gene_set_panel(...)` scores many sets × composite variants
   in a single attribution pass. Requires `[attribution]`.
-- `focal.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC", centroid="mean_lognorm", _result=None) -> pd.DataFrame`
+- `recast.score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *, reference="rest", calibrate=None, device=None, gate="dC", centroid="mean_lognorm", _result=None) -> pd.DataFrame`
   — **per-cell** score `[n_cells × states]`:
   `S_i(c) = mean_{g∈G_c} max(0, x_ig − C_ref,g) · max(0, φ_c[g])` — each panel gene's
   reference-relative over-expression (per-cell tp10k-lognorm minus the reference centroid),
-  weighted by the FOCAL attribution `φ_c` (positive channel). `gene_sets` is
+  weighted by the RECAST attribution `φ_c` (positive channel). `gene_sets` is
   `{state: [genes]}` (one panel per candidate state); `P.idxmax(axis=1)` is the predicted
   state per cell. `calibrate ∈ {None, 'zscore', 'rank'}` is a label-free per-state rescale
   that calibrates the cross-state **argmax** without changing per-state one-vs-rest AUROC
@@ -209,41 +209,41 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
   bit-for-bit (real SCimilarity: `max|Δ| ≈ 5e-9`); `'pseudobulk'` is the opt-in pool-before-log
   denoised centroid. Scores every cell with an attribution fit on all cells (transductive);
   cross-validate for an unbiased benchmark. Requires `[attribution]`.
-- `focal.AttributionResult` — dataclass: `attribution: pd.DataFrame`, `genes: dict`,
+- `recast.AttributionResult` — dataclass: `attribution: pd.DataFrame`, `genes: dict`,
   `meta: dict`, `.top(state, k=20)`.
-- `focal.io.read_h5ad(path)`, `focal.io.write_attribution(result, path)`,
-  `focal.io.read_attribution(path)` — round-trip an `AttributionResult` through an
-  `.h5ad` (`varm["focal_attribution"]`, `uns["focal_states"/"focal_genes"/"focal_meta"]`).
-- `focal.io.write_markers(result, path_prefix) -> pd.DataFrame` — writes
+- `recast.io.read_h5ad(path)`, `recast.io.write_attribution(result, path)`,
+  `recast.io.read_attribution(path)` — round-trip an `AttributionResult` through an
+  `.h5ad` (`varm["recast_attribution"]`, `uns["recast_states"/"recast_genes"/"recast_meta"]`).
+- `recast.io.write_markers(result, path_prefix) -> pd.DataFrame` — writes
   `{path_prefix}_markers.csv` with columns `state, rank, gene, score` (`score` is
   whatever's in `result.attribution` at call time — raw attribution for a result fresh
   out of `attribute()`, or the composite-weighted score if you assembled `result` from
   `composite(..., return_scores=True)` first, as the CLI does).
-- `focal.encoders.{Encoder, StubEncoder, SCimilarityEncoder, SSLEncoder, SCVIEncoder}`
+- `recast.encoders.{Encoder, StubEncoder, SCimilarityEncoder, SSLEncoder, SCVIEncoder}`
   — see Encoders above. Requires `[attribution]`.
 
 ## CLI reference
 
 ```
-focal attribute --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
+recast attribute --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
                  --cluster-key KEY [--target LABEL] [--reference siblings|rest|A,B,...]
                  --out PATH
 
-focal composite --attr PATH --h5ad PATH --cluster-key KEY
+recast composite --attr PATH --h5ad PATH --cluster-key KEY
                  [--mode {bare,tauE,discr,discrRU,tauE_discr,tauE_discrRU}]
                  --out-prefix PREFIX
 
-focal score-set  --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
+recast score-set  --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
                  --cluster-key KEY --gene-sets panels.json [--reference rest]
                  [--composites bare,tauE_discrRU] --out scores.csv          # PER-CLUSTER
 
-focal score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
+recast score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
                  --cluster-key KEY --gene-sets panels.json [--reference rest]
                  [--calibrate none|zscore|rank] [--centroid mean_lognorm|pseudobulk]
                  --out cells.csv                                          # PER-CELL
 ```
 
-- `focal attribute` reads `--h5ad`, builds the requested encoder, runs `attribute()`,
+- `recast attribute` reads `--h5ad`, builds the requested encoder, runs `attribute()`,
   and writes the full `AttributionResult` to `--out` (an `.h5ad`). `--model` is
   required in practice for every encoder except `stub` (omitting it surfaces as a
   failure rather than a friendlier argparse-level error, but *where* it surfaces
@@ -253,16 +253,16 @@ focal score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PAT
   constructing `SCVIEncoder`, so the failure is whatever `scvi`'s own loader raises for
   a bad/missing path — typically a `ValueError` from `scvi` itself, not
   `SCVIEncoder.__init__`'s `ValueError`). `--reference` defaults to `siblings`.
-- `focal composite` reads `--attr` (from a prior `focal attribute` run) and `--h5ad`,
+- `recast composite` reads `--attr` (from a prior `recast attribute` run) and `--h5ad`,
   runs `composite(..., return_scores=True)`, and writes only
   `<out-prefix>_markers.csv` (it does not write a new `.h5ad`). `--mode` defaults to
   `tauE_discrRU`.
-- `focal score-set` reads `--h5ad`, builds the encoder, and writes a long-form
-  per-(gene-set × cluster) CSV (`score_gene_set_panel`). `focal score-cells` writes a
+- `recast score-set` reads `--h5ad`, builds the encoder, and writes a long-form
+  per-(gene-set × cluster) CSV (`score_gene_set_panel`). `recast score-cells` writes a
   `[cell × state]` CSV with a leading `predicted` column (argmax of the state scores) —
   `--gene-sets` is a JSON `{state: [genes]}` and `--calibrate` defaults to `zscore` (the
   cross-state argmax calibration; use `none` for raw scores, `rank` for a rank transform).
   `--centroid` defaults to `mean_lognorm` (the research/slides recipe, reproduced bit-for-bit);
   pass `pseudobulk` for the opt-in pool-before-log centroid.
-- All subcommands return `0` on success (see `focal.cli.main`); there is currently no
+- All subcommands return `0` on success (see `recast.cli.main`); there is currently no
   non-zero exit path other than an uncaught exception from inside the library.

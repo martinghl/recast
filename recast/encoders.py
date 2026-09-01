@@ -44,7 +44,7 @@ def prep_counts(counts, normalize):
 
     normalize=True applies log1p(1e4 * per-cell gene proportions), the input SCimilarity expects.
     Empty cells (zero library) yield an all-zero row rather than a division by zero, matching
-    focal.centroid.mean_lognorm_centroid."""
+    recast.centroid.mean_lognorm_centroid."""
     X = counts.toarray() if sp.issparse(counts) else np.asarray(counts)
     X = X.astype("float32")
     if not normalize:
@@ -65,7 +65,7 @@ class SCimilarityEncoder(Encoder):
 
       .embed(counts)     <- adata.X verbatim. SCimilarity needs per-cell tp10k-lognorm, so pass
                             normalize=True when .X holds raw counts (the contract attribute()
-                            documents, since focal.centroid.mean_lognorm_centroid normalizes .X
+                            documents, since recast.centroid.mean_lognorm_centroid normalizes .X
                             itself). Leave normalize=False only if you have already normalized .X.
       .torch_encode(x)   <- the reference centroid, which mean_lognorm_centroid has ALREADY
                             log-normalized. It must therefore never normalize, and does not --
@@ -93,13 +93,13 @@ class SCimilarityEncoder(Encoder):
         return self._net(x.to(dev))
 
 class SSLEncoder(Encoder):
-    """SSL-MLP encoder (scTab / PBMC) via SIGnature's SSLWrapper. Set FOCAL_SIGNATURE_SRC if the
+    """SSL-MLP encoder (scTab / PBMC) via SIGnature's SSLWrapper. Set RECAST_SIGNATURE_SRC if the
     SIGnature package isn't already on sys.path."""
     def __init__(self, model_path):
         if not model_path or not os.path.exists(model_path):
             raise FileNotFoundError(f"SSL model dir not found: {model_path!r}")
         import sys
-        src = os.environ.get("FOCAL_SIGNATURE_SRC")
+        src = os.environ.get("RECAST_SIGNATURE_SRC")
         if src and src not in sys.path:
             sys.path.insert(0, src)
         from SIGnature.models.ssl import SSLWrapper

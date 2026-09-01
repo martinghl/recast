@@ -1,5 +1,5 @@
 import numpy as np
-from focal.contrast import resolve_reference, contrast_direction
+from recast.contrast import resolve_reference, contrast_direction
 
 def test_resolve_modes():
     lab = np.array(["A", "A", "B", "C"])

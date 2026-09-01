@@ -4,9 +4,9 @@ import warnings
 import anndata
 import numpy as np
 
-import focal
-from focal.encoders import StubEncoder
-from focal.qc import ContrastQCWarning, QC_COLUMNS, contrast_qc, qc_from_embeddings
+import recast
+from recast.encoders import StubEncoder
+from recast.qc import ContrastQCWarning, QC_COLUMNS, contrast_qc, qc_from_embeddings
 
 
 def _adata(sep, n_per=100, n_genes=30, seed=0):
@@ -26,7 +26,7 @@ def test_separable_contrast_passes_qc_silently():
     a = _adata(sep=30)
     with warnings.catch_warnings():
         warnings.simplefilter("error", ContrastQCWarning)   # any QC warning -> test failure
-        res = focal.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu")
+        res = recast.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu")
     assert list(res.qc.columns) == QC_COLUMNS
     assert set(res.qc.index) == {"A", "B"}
     assert (res.qc.cos_u_mean > 0.95).all()
@@ -38,7 +38,7 @@ def test_inseparable_contrast_warns():
     a = _adata(sep=0)                                       # same distribution both sides
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        res = focal.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu")
+        res = recast.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu")
     assert any(issubclass(x.category, ContrastQCWarning) for x in w)
     assert (res.qc.cos_u_mean < 0.9).all()                  # both directions are noise
 
@@ -46,10 +46,10 @@ def test_inseparable_contrast_warns():
 def test_qc_off_and_silent_do_not_change_rankings():
     a = _adata(sep=30)
     enc = StubEncoder(a.n_vars)
-    r_off = focal.cluster_attribution(enc, a, "state", device="cpu", qc="off")
+    r_off = recast.cluster_attribution(enc, a, "state", device="cpu", qc="off")
     with warnings.catch_warnings():
         warnings.simplefilter("error", ContrastQCWarning)
-        r_silent = focal.cluster_attribution(enc, a, "state", device="cpu", qc="silent")
+        r_silent = recast.cluster_attribution(enc, a, "state", device="cpu", qc="silent")
     assert r_off.qc is None and r_silent.qc is not None
     assert np.allclose(r_off.attribution.to_numpy(), r_silent.attribution.to_numpy())
     assert r_off.genes == r_silent.genes
@@ -59,7 +59,7 @@ def test_silent_mode_still_attaches_qc_for_bad_contrast():
     a = _adata(sep=0)
     with warnings.catch_warnings():
         warnings.simplefilter("error", ContrastQCWarning)   # silent means NO warning even when bad
-        res = focal.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu", qc="silent")
+        res = recast.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu", qc="silent")
     assert (res.qc.cos_u_mean < 0.9).all()
 
 
@@ -87,5 +87,5 @@ def test_tiny_target_warns_on_size():
     a.obs["state"] = lab
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        focal.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu")
+        recast.cluster_attribution(StubEncoder(a.n_vars), a, "state", device="cpu")
     assert any("cells (<20)" in str(x.message) for x in w if issubclass(x.category, ContrastQCWarning))

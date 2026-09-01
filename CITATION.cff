@@ -1,18 +1,18 @@
 cff-version: 1.2.0
-message: "If you use FOCAL in your research, please cite it as below."
-title: "FOCAL"
+message: "If you use RECAST in your research, please cite it as below."
+title: "RECAST"
 abstract: >-
-  Foundation-model Contrastive Attribution: the genes that define a
+  Reference-Conditioned Attribution of Single-cell Transcriptomes: the genes that define a
   target-vs-reference cell state, found by running Integrated Gradients on a
   foundation model's embedding of a denoised pseudobulk centroid, contrasted
   against a chosen reference, keeping only the positive attribution channel.
 type: software
 version: "0.1.0"
 authors:
-  - name: "The FOCAL authors"
+  - name: "The RECAST authors"
 license: MIT
-repository-code: "https://github.com/martinghl/focal"
-url: "https://github.com/martinghl/focal"
+repository-code: "https://github.com/martinghl/recast"
+url: "https://github.com/martinghl/recast"
 keywords:
   - single-cell
   - scRNA-seq

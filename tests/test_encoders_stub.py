@@ -1,5 +1,5 @@
 import numpy as np, torch
-from focal.encoders import StubEncoder
+from recast.encoders import StubEncoder
 
 def test_stub_embed_unit_norm():
     enc = StubEncoder(3)

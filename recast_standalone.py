@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-FOCAL — Foundation-model Contrastive Attribution  (single-file, standalone; no install needed)
+RECAST — Reference-Conditioned Attribution of Single-cell Transcriptomes  (single-file, standalone; no install needed)
 
 Given raw single-cell counts (.h5ad) with a per-cell cluster label and a pretrained single-cell
-foundation-model encoder, FOCAL returns the genes that DEFINE a target-vs-reference cell state:
+foundation-model encoder, RECAST returns the genes that DEFINE a target-vs-reference cell state:
 
   1. embed cells with the FM                      -> L2-normalized vectors
   2. contrast direction  u = normalize(mean(enc(target)) - mean(enc(reference)))
@@ -19,26 +19,26 @@ Usage
 -----
   # SCimilarity, one state vs its siblings.  For FINE states, subset the .h5ad to the lineage first,
   # so "siblings" == the other states in that lineage.
-  python focal_standalone.py --h5ad raw.h5ad --encoder scimilarity --model $FOCAL_MODEL_DIR \
+  python recast_standalone.py --h5ad raw.h5ad --encoder scimilarity --model $RECAST_MODEL_DIR \
       --cluster-key state --target "CX3CR1+ CD8" --reference siblings --out markers.csv
 
   # every state, with the composite marker layer, top-50 genes per state:
-  python focal_standalone.py --h5ad raw.h5ad --encoder scimilarity --model $FOCAL_MODEL_DIR \
+  python recast_standalone.py --h5ad raw.h5ad --encoder scimilarity --model $RECAST_MODEL_DIR \
       --cluster-key state --composite tauE_discrRU --top 50 --out markers.csv
 
   # no-weights smoke test (identity StubEncoder):
-  python focal_standalone.py --h5ad raw.h5ad --encoder stub --cluster-key state --out markers.csv
+  python recast_standalone.py --h5ad raw.h5ad --encoder stub --cluster-key state --out markers.csv
 
 Encoders:  stub | scimilarity | ssl | scvi
   - scimilarity / ssl : --model is the model DIRECTORY.  (ssl needs SIGnature on the path; set
-                        FOCAL_SIGNATURE_SRC if it isn't importable.)
+                        RECAST_SIGNATURE_SRC if it isn't importable.)
   - scvi              : --model is a saved scvi.model.SCVI directory (re-loaded with the given .h5ad).
   - stub              : identity encoder, no weights — for testing the pipeline end to end.
 
 --reference : "siblings" | "rest" | a comma-list of labels ("A,B,C").  ("siblings"=="rest" within the
               given .h5ad — subset to the lineage first for fine states.)
 --target    : a single state label; omit to attribute EVERY state vs its reference.
---composite : omit for the raw FOCAL ranking, or one of
+--composite : omit for the raw RECAST ranking, or one of
               bare | tauE | discr | discrRU | tauE_discr | tauE_discrRU  (marker-specialization layer).
 --gate      : "dC" (default, CORRECT: centroid(target)-centroid(reference) > 0 -- the gene must be
               genuinely up-regulated) or "phi" (legacy: the attribution's own sign > 0 -- back-compat
@@ -50,7 +50,7 @@ Note on devices: for real FMs the encoder's weights and --device must be on the 
 wrapper does not move FM weights.  --device defaults to cuda if available, else cpu.
 
 Deps: numpy, scipy, pandas, anndata, torch, captum  (+ scimilarity / scvi-tools / SIGnature per encoder).
-FOCAL is standalone — it does NOT depend on scattr (the tauE / Mann-Whitney primitives are vendored below).
+RECAST is standalone — it does NOT depend on scattr (the tauE / Mann-Whitney primitives are vendored below).
 """
 import argparse
 import os
@@ -203,11 +203,11 @@ class SCimilarityEncoder(Encoder):
 
 
 class SSLEncoder(Encoder):
-    """SSL-MLP encoder (scTab / PBMC) via SIGnature's SSLWrapper. Set FOCAL_SIGNATURE_SRC if needed."""
+    """SSL-MLP encoder (scTab / PBMC) via SIGnature's SSLWrapper. Set RECAST_SIGNATURE_SRC if needed."""
     def __init__(self, model_path):
         if not model_path or not os.path.exists(model_path):
             raise FileNotFoundError(f"SSL model dir not found: {model_path!r}")
-        src = os.environ.get("FOCAL_SIGNATURE_SRC")
+        src = os.environ.get("RECAST_SIGNATURE_SRC")
         if src and src not in sys.path:
             sys.path.insert(0, src)
         from SIGnature.models.ssl import SSLWrapper
@@ -258,7 +258,7 @@ def build_encoder(name, model, n_genes, adata):
     return {"scimilarity": SCimilarityEncoder, "ssl": SSLEncoder}[name](model)
 
 
-# ============================================================ core FOCAL
+# ============================================================ core RECAST
 def resolve_labels(adata, cluster_key):
     """Per-cell label array from an obs column, or a sidecar .txt of labels (one per line)."""
     if isinstance(cluster_key, str) and cluster_key.endswith(".txt"):
@@ -273,7 +273,7 @@ def _attribute_one(enc, counts, target_mask, ref_mask, device, centroid="mean_lo
     cfn = CENTROIDS[centroid]
     u = contrast_direction(enc.embed(counts[target_mask]), enc.embed(counts[ref_mask]))
     C = cfn(counts, target_mask)
-    C_ref = cfn(counts, ref_mask)   # needed for the dC>0 gate (mirrors focal/attribution.py)
+    C_ref = cfn(counts, ref_mask)   # needed for the dC>0 gate (mirrors recast/attribution.py)
     dC = C - C_ref
     x = torch.as_tensor(C[None], dtype=torch.float32, device=device).requires_grad_(True)
     ut = torch.as_tensor(u[None], dtype=torch.float32, device=device)
@@ -377,7 +377,7 @@ def composite(attribution_df, genes_dict, adata, cluster_key, mode="tauE_discrRU
 
 # ============================================================ CLI
 def _markers_from_attribution(attribution_df, genes_dict):
-    """{state: [(gene, raw_attribution), ...]} in FOCAL rank order (no composite)."""
+    """{state: [(gene, raw_attribution), ...]} in RECAST rank order (no composite)."""
     out = {}
     for s, genes in genes_dict.items():
         col = attribution_df[s]
@@ -397,7 +397,7 @@ def write_markers(scored, path, top=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="FOCAL — contrastive foundation-model attribution for state-defining genes.",
+        description="RECAST — contrastive foundation-model attribution for state-defining genes.",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--h5ad", required=True, help="raw-counts AnnData (.h5ad); subset to a lineage for fine states")
     ap.add_argument("--encoder", required=True, choices=["stub", "scimilarity", "ssl", "scvi"])
@@ -412,7 +412,7 @@ def main(argv=None):
                     help="reference-centroid recipe; default 'mean_lognorm' (research recipe: mean of "
                          "per-cell lognorm), 'pseudobulk' pools counts before the log")
     ap.add_argument("--composite", default=None, choices=list(_COMPOSITE_MODES),
-                    help="marker-specialization layer; omit for the raw FOCAL ranking")
+                    help="marker-specialization layer; omit for the raw RECAST ranking")
     ap.add_argument("--composite-layer", default=None,
                     help="adata layer holding LOG-NORMALIZED expression for the composite factors; "
                          "default: log-normalize adata.X (assumed raw counts) internally")
@@ -437,8 +437,8 @@ def main(argv=None):
         scored = _markers_from_attribution(attribution_df, genes_dict)
 
     df = write_markers(scored, args.out, top=args.top)
-    tag = f"composite={args.composite}" if args.composite else "raw FOCAL"
-    print(f"[FOCAL] {len(genes_dict)} state(s), {tag}, gate={args.gate}, ref={reference} "
+    tag = f"composite={args.composite}" if args.composite else "raw RECAST"
+    print(f"[RECAST] {len(genes_dict)} state(s), {tag}, gate={args.gate}, ref={reference} "
           f"-> {len(df)} rows in {args.out}")
     for s in list(genes_dict)[:8]:
         print(f"   {s}: " + ", ".join(g for g, _ in scored[s][:8]))

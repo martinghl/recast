@@ -1,6 +1,6 @@
 import numpy as np, pandas as pd, anndata as ad
-from focal.io import AttributionResult
-from focal.composite import composite
+from recast.io import AttributionResult
+from recast.composite import composite
 
 def test_modes_run_and_specificity():
     # 2 states, 3 genes; G1 specific to S1 (high & only there), G2 ubiquitous

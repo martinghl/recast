@@ -1,0 +1,21 @@
+# Conda alternative to requirements.txt for the FOCAL reproduction (CPU-only, deterministic).
+#   conda env create -f environment.yml
+#   conda activate focal-reproduce
+#   pip install ./dist/focal-0.2.0-py3-none-any.whl   # BUNDLED here — NOT from PyPI/GitHub (older 0.1.0)
+#   python reproduce_focal.py
+name: focal-reproduce
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - numpy==2.4.6
+      - scipy==1.17.1
+      - pandas==2.3.3
+      - scikit-learn==1.9.0
+      - anndata==0.12.19
+      - scanpy==1.11.5
+      - torch==2.5.1
+      - captum==0.7.0
+      - scimilarity==0.4.1

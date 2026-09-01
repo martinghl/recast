@@ -3,14 +3,14 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "focal"
-version = "0.6.0"
-description = "Foundation-model Contrastive Attribution: genes that define a target-vs-reference cell state."
+name = "sc-recast"
+version = "0.7.0"
+description = "Reference-Conditioned Attribution of Single-cell Transcriptomes: genes that define a target-vs-reference cell state."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "The FOCAL authors" }]
+authors = [{ name = "The RECAST authors" }]
 keywords = ["single-cell", "scRNA-seq", "attribution", "integrated-gradients", "foundation-model",
             "contrastive", "cell-state", "marker-genes", "bioinformatics"]
 classifiers = [
@@ -26,13 +26,13 @@ attribution = ["torch", "captum", "scimilarity", "scvi-tools"]
 dev = ["pytest"]
 
 [project.scripts]
-focal = "focal.cli:main"
+recast = "recast.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/martinghl/focal"
-Repository = "https://github.com/martinghl/focal"
-Issues = "https://github.com/martinghl/focal/issues"
+Homepage = "https://github.com/martinghl/recast"
+Repository = "https://github.com/martinghl/recast"
+Issues = "https://github.com/martinghl/recast/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["focal*"]
+include = ["recast*"]

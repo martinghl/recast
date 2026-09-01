@@ -1,5 +1,5 @@
 import pytest
-from focal import encoders
+from recast import encoders
 
 def test_adapters_exist_and_are_encoders():
     for name in ("SCimilarityEncoder", "SSLEncoder", "SCVIEncoder"):

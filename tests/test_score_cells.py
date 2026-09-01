@@ -1,6 +1,6 @@
 import numpy as np, anndata as ad
-from focal.encoders import StubEncoder
-from focal.score import score_cells_attribution_weighted_expression as score_cells, cluster_attribution
+from recast.encoders import StubEncoder
+from recast.score import score_cells_attribution_weighted_expression as score_cells, cluster_attribution
 
 
 def _planted():
@@ -71,8 +71,8 @@ def test_formula_matches_building_blocks():
     """Pin the OPT-IN pseudobulk recipe: S_i(c) = mean_{g in G_c} max(0, x_ig - C_ref,g) * max(0, phi_c[g])
     against a hand recomputation from pseudobulk_centroid + per-cell tp10k-lognorm. (The default
     mean_lognorm recipe is pinned in test_parity_score_cells_uses_mean_lognorm_cref.)"""
-    from focal.centroid import pseudobulk_centroid
-    from focal.contrast import resolve_reference
+    from recast.centroid import pseudobulk_centroid
+    from recast.contrast import resolve_reference
     a = _planted(); enc = StubEncoder(a.n_vars)
     res = cluster_attribution(enc, a, "state", reference="rest", centroid="pseudobulk")
     P = score_cells(enc, a, "state", PANELS, reference="rest", centroid="pseudobulk", _result=res)
@@ -96,10 +96,10 @@ def test_cli_score_cells(tmp_path):
     a = _planted(); h5 = tmp_path / "toy.h5ad"; a.write_h5ad(h5)
     panels = tmp_path / "panels.json"; panels.write_text(json.dumps(PANELS))
     out = tmp_path / "cells.csv"
-    r = subprocess.run([sys.executable, "-m", "focal", "score-cells", "--h5ad", str(h5),
+    r = subprocess.run([sys.executable, "-m", "recast", "score-cells", "--h5ad", str(h5),
                         "--encoder", "stub", "--cluster-key", "state", "--gene-sets", str(panels),
                         "--calibrate", "zscore", "--out", str(out)],
-                       capture_output=True, text=True, cwd="/data/gli9/test_sig/focal")
+                       capture_output=True, text=True, cwd="/data/gli9/test_sig/recast")
     assert r.returncode == 0, r.stderr
     df = pd.read_csv(out)
     assert {"cell", "predicted", "A", "B", "C"} <= set(df.columns) and len(df) == 90
@@ -109,7 +109,7 @@ def test_cli_score_cells(tmp_path):
 def test_mean_lognorm_centroid_pools_after_log():
     """mean_lognorm_centroid = per-cell lognorm THEN mean (benchmark's Xtr[mask].mean(0)); genuinely
     different from pseudobulk_centroid (pool counts THEN log) on a real fixture."""
-    from focal.centroid import pseudobulk_centroid, mean_lognorm_centroid
+    from recast.centroid import pseudobulk_centroid, mean_lognorm_centroid
     a = _planted()
     counts = np.asarray(a.X, dtype="float32")
     mask = a.obs["state"].to_numpy() == "A"
@@ -137,8 +137,8 @@ def test_default_centroid_is_mean_lognorm():
 def test_parity_attribution_anchor_switches_to_mean_lognorm():
     """centroid='mean_lognorm' moves the IG anchor+baseline onto the mean-of-lognorm centroids:
     dC matches the hand recomputation and the attribution genuinely differs from pseudobulk."""
-    from focal.centroid import mean_lognorm_centroid
-    from focal.contrast import resolve_reference
+    from recast.centroid import mean_lognorm_centroid
+    from recast.contrast import resolve_reference
     a = _planted(); enc = StubEncoder(a.n_vars)
     counts = np.asarray(a.X, dtype="float32")
     labels = a.obs["state"].to_numpy().astype(str)
@@ -153,10 +153,10 @@ def test_parity_attribution_anchor_switches_to_mean_lognorm():
 
 def test_parity_score_cells_uses_mean_lognorm_cref():
     """The benchmark-parity per-cell score: S_i(c)=mean_g max(0,x_ig-C_ref,g)*max(0,phi_c[g]) with
-    C_ref = mean-of-lognorm reference centroid (== focal_pcell_bench.m1_scores' C_ref). Pinned to a
+    C_ref = mean-of-lognorm reference centroid (== recast_pcell_bench.m1_scores' C_ref). Pinned to a
     hand recomputation, and shown to differ from the pseudobulk default path."""
-    from focal.centroid import mean_lognorm_centroid
-    from focal.contrast import resolve_reference
+    from recast.centroid import mean_lognorm_centroid
+    from recast.contrast import resolve_reference
     a = _planted(); enc = StubEncoder(a.n_vars)
     res = cluster_attribution(enc, a, "state", reference="rest", centroid="mean_lognorm")
     P = score_cells(enc, a, "state", PANELS, reference="rest", centroid="mean_lognorm", _result=res)

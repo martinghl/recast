@@ -1,34 +1,36 @@
-# FOCAL — Foundation-model Contrastive Attribution
+# RECAST
+
+**RE**ference-**C**onditioned **A**ttribution of **S**ingle-cell **T**ranscriptomes
 
 **The genes that *define* a target-vs-reference cell state.**
 
-[![Documentation Status](https://readthedocs.org/projects/scfocal/badge/?version=latest)](https://scfocal.readthedocs.io/en/latest/)
+[![Documentation Status](https://readthedocs.org/projects/screcast/badge/?version=latest)](https://screcast.readthedocs.io/en/latest/)
 
-**Documentation and tutorials: <https://scfocal.readthedocs.io/>** — five notebooks, each
+**Documentation and tutorials: <https://screcast.readthedocs.io/>** — five notebooks, each
 published with the output it actually produced.
 
-FOCAL is a standalone, self-contained method for turning a single-cell foundation
+RECAST is a standalone, self-contained method for turning a single-cell foundation
 model's (FM's) embedding into a ranked list of marker genes for one cell state versus
 a chosen reference. It has no dependency on, and is not an add-on or extension of, any
 other attribution or marker-gene tool.
 
 ## Two ways to use it
 
-- **Single-file script, no install** — [`focal_standalone.py`](focal_standalone.py): the whole
+- **Single-file script, no install** — [`recast_standalone.py`](recast_standalone.py): the whole
   method (core recipe + composite layer + all four encoders) flattened into one file. Just run it:
   ```bash
-  python focal_standalone.py --h5ad raw.h5ad --encoder scimilarity --model <model_dir> \
+  python recast_standalone.py --h5ad raw.h5ad --encoder scimilarity --model <model_dir> \
       --cluster-key state --target "CX3CR1+ CD8" --reference siblings --out markers.csv
   ```
   (`--encoder stub` needs no weights — a smoke test; omit `--target` to do every state; add
   `--composite tauE_discrRU` for the marker layer.) Writes a `state,rank,gene,score` CSV.
 - **Installable package** — `pip install .` (core) or `pip install ".[attribution]"` (adds the FM
-  encoders) for the `focal.attribute()` / `focal.composite()` Python API and the `focal` CLI; see below.
+  encoders) for the `recast.attribute()` / `recast.composite()` Python API and the `recast` CLI; see below.
 
 ## What it is, and why
 
 Foundation models embed cells into a space where "what makes this state different from
-that one" is encoded implicitly in the geometry. FOCAL makes that implicit knowledge
+that one" is encoded implicitly in the geometry. RECAST makes that implicit knowledge
 explicit, per gene:
 
 1. **Contrast direction.** Embed the target cells and the reference cells with the FM,
@@ -67,17 +69,17 @@ a state's embedding on its own, with no contrastive reference ("native IG"), ten
 surface the state's general identity genes — the marker genes you'd already expect for
 that cell type — rather than what specifically separates it from the particular
 reference you picked. Plain differential expression ranks genes by expression-shift
-alone, with no notion of what the FM's embedding actually relies on. FOCAL's output is
+alone, with no notion of what the FM's embedding actually relies on. RECAST's output is
 explicitly relative to the `(target, reference)` pair you choose — pick a different
 reference and you can get a different top gene, on purpose.
 
-FOCAL ships a small **composite** readout layer on top of the raw attribution that
+RECAST ships a small **composite** readout layer on top of the raw attribution that
 optionally reweights it by expression-specificity and/or discriminativeness (see
 [`docs/usage.md`](docs/usage.md)), and CLI + Python entry points for both stages.
 
 ## Install
 
-FOCAL has two install tiers, split along the torch dependency:
+RECAST has two install tiers, split along the torch dependency:
 
 ```bash
 # Core: numpy / scipy / pandas / anndata only. No torch.
@@ -88,29 +90,29 @@ pip install .
 pip install ".[attribution]"
 ```
 
-The **core** install gives you `focal.composite()`, `focal.io.*` (h5ad round-trip,
-markers-CSV export), and the `focal composite` CLI subcommand — enough to turn an
+The **core** install gives you `recast.composite()`, `recast.io.*` (h5ad round-trip,
+markers-CSV export), and the `recast composite` CLI subcommand — enough to turn an
 `AttributionResult` someone already computed (e.g. on a GPU box) into ranked markers,
-with no torch anywhere in the process. `import focal` itself never imports torch,
+with no torch anywhere in the process. `import recast` itself never imports torch,
 regardless of which tier is installed.
 
 The **attribution** extra is required for anything that touches an encoder or runs
-`attribute()` — including `StubEncoder` and `focal attribute --encoder stub`. Stub is a
+`attribute()` — including `StubEncoder` and `recast attribute --encoder stub`. Stub is a
 deterministic identity encoder for tests/CI, not a lighter-weight install path: the
-`focal.encoders` module imports `torch` unconditionally, so any encoder class (real FM
+`recast.encoders` module imports `torch` unconditionally, so any encoder class (real FM
 or stub) needs this tier. [`examples/demo.py`](examples/demo.py) uses `StubEncoder` and
 therefore also needs `pip install ".[attribution]"` — it does not need a GPU (it runs
 on `device="cpu"`), just torch + captum.
 
 `SSLEncoder` additionally needs the separate SIGnature package on `sys.path` — it is
-not one of the `[attribution]` extras. Point `FOCAL_SIGNATURE_SRC` at a checkout of it
+not one of the `[attribution]` extras. Point `RECAST_SIGNATURE_SRC` at a checkout of it
 if it isn't already importable.
 
 Two environment variables show up in the examples below:
 
-- `FOCAL_SIGNATURE_SRC` — read by `SSLEncoder` at construction time; if set, it's
+- `RECAST_SIGNATURE_SRC` — read by `SSLEncoder` at construction time; if set, it's
   prepended to `sys.path` before importing `SIGnature.models.ssl`.
-- `FOCAL_MODEL_DIR` — **not** read by FOCAL itself. It's just a convenient shell
+- `RECAST_MODEL_DIR` — **not** read by RECAST itself. It's just a convenient shell
   variable, used below to point `--model` / `SCimilarityEncoder(...)` at wherever you
   keep encoder weights on disk; name it anything you like, or pass a literal path.
 
@@ -120,20 +122,20 @@ Two environment variables show up in the examples below:
 
 ```python
 import os
-import focal
+import recast
 
 # Or SSLEncoder(model_path) / SCVIEncoder(trained_scvi_model)
-enc = focal.SCimilarityEncoder(os.environ["FOCAL_MODEL_DIR"])
+enc = recast.SCimilarityEncoder(os.environ["RECAST_MODEL_DIR"])
 
-res = focal.attribute(enc, adata, cluster_key="state", target="CX3CR1+ CD8", reference="siblings")
+res = recast.attribute(enc, adata, cluster_key="state", target="CX3CR1+ CD8", reference="siblings")
 res.genes["CX3CR1+ CD8"]        # full ranked gene list; positive-attribution genes first
 res.attribution                 # DataFrame: genes x attributed states, raw IG scores
 
-mk = focal.composite(res, adata, "state", mode="tauE_discrRU")
+mk = recast.composite(res, adata, "state", mode="tauE_discrRU")
 mk["CX3CR1+ CD8"][:20]          # top 20 markers after specificity/discriminativeness reweighting
 
 # PER-CELL scoring: score every cell against a curated panel per candidate state, then argmax.
-P = focal.score_cells_attribution_weighted_expression(
+P = recast.score_cells_attribution_weighted_expression(
         enc, adata, "state",
         gene_sets={"CX3CR1+ CD8": [...], "CXCR6+ CD8": [...]},   # one panel per candidate state
         reference="rest", calibrate="zscore")
@@ -154,10 +156,10 @@ labels.
 ## Quickstart — CLI
 
 ```bash
-focal attribute --h5ad raw.h5ad --encoder scimilarity --model $FOCAL_MODEL_DIR \
-  --cluster-key state --reference siblings --out focal_attr.h5ad
+recast attribute --h5ad raw.h5ad --encoder scimilarity --model $RECAST_MODEL_DIR \
+  --cluster-key state --reference siblings --out recast_attr.h5ad
 
-focal composite --attr focal_attr.h5ad --h5ad raw.h5ad --cluster-key state \
+recast composite --attr recast_attr.h5ad --h5ad raw.h5ad --cluster-key state \
   --mode tauE_discrRU --out-prefix markers
 ```
 
@@ -165,20 +167,20 @@ focal composite --attr focal_attr.h5ad --h5ad raw.h5ad --cluster-key state \
 `B,DC`). `--encoder` is one of `stub` | `scimilarity` | `ssl` | `scvi` (`scvi` loads a
 saved model directory via `SCVI.load(model, adata=adata)`, so `--model` must point at a
 directory written by `model.save(...)` against a compatible `AnnData`). Omit `--target`
-to attribute every state found in `--cluster-key`. `focal composite` writes
+to attribute every state found in `--cluster-key`. `recast composite` writes
 `<out-prefix>_markers.csv` with columns `state, rank, gene, score`. Full flag and mode
 reference: [`docs/usage.md`](docs/usage.md).
 
 ## Scope and honest limits
 
-- FOCAL only surfaces what the *chosen FM* encodes. If the encoder's embedding doesn't
+- RECAST only surfaces what the *chosen FM* encodes. If the encoder's embedding doesn't
   separate target from reference, the contrast direction is noise and the attribution
-  will be too — FOCAL cannot manufacture a distinction the FM doesn't represent.
+  will be too — RECAST cannot manufacture a distinction the FM doesn't represent.
 - Its advantage over simpler baselines (DE, native IG) is FM-quality-dependent. A weak
   or off-domain encoder will not beat plain differential expression.
 - There is no scFoundation adapter. scFoundation's published input scheme is a fixed
   ~512-token discretized read-depth encoding, which cannot ingest the dense, arbitrary
-  gene-count pseudobulk centroid FOCAL builds (one continuous value per gene in the
+  gene-count pseudobulk centroid RECAST builds (one continuous value per gene in the
   full `var_names` universe) — the two input contracts are incompatible, not just
   unimplemented.
 - Only three real encoder adapters exist today: SCimilarity, SSL (scTab/PBMC), and

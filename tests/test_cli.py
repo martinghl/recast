@@ -1,6 +1,6 @@
 import numpy as np, pandas as pd, anndata as ad
-from focal.cli import main
-from focal.io import read_attribution
+from recast.cli import main
+from recast.io import read_attribution
 
 def test_cli_attribute_then_composite(tmp_path):
     X = np.abs(np.random.default_rng(2).normal(5, 1, (20, 4))).astype("float32")
@@ -41,7 +41,7 @@ def test_encoder_scvi_loads_model_from_path_not_old_wiring_error():
     comes from scvi's own loader on a bad path, not the old wiring error."""
     import pytest
     pytest.importorskip("scvi")
-    from focal.cli import _encoder
+    from recast.cli import _encoder
     with pytest.raises(Exception) as excinfo:
         _encoder("scvi", "/no/such/scvi/model/path", 4, adata=None)
     assert "expects a trained scvi.model.SCVI instance" not in str(excinfo.value)

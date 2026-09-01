@@ -1,4 +1,4 @@
-"""focal attribute | composite command-line interface (thin over the library)."""
+"""recast attribute | composite command-line interface (thin over the library)."""
 import argparse
 
 def _encoder(name, model, n_genes, adata=None):
@@ -64,7 +64,7 @@ def _cmd_score_cells(a):
     P.to_csv(a.out, index_label="cell"); return 0
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="focal", description="Foundation-model Contrastive Attribution")
+    p = argparse.ArgumentParser(prog="recast", description="Reference-Conditioned Attribution of Single-cell Transcriptomes")
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("attribute")
     a.add_argument("--h5ad", required=True); a.add_argument("--encoder", required=True,

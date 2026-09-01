@@ -1,6 +1,6 @@
 import numpy as np, pandas as pd, anndata as ad
-from focal.io import AttributionResult
-from focal.composite import composite, composite_weights, _factors, _MODES
+from recast.io import AttributionResult
+from recast.composite import composite, composite_weights, _factors, _MODES
 
 def _res_and_adata():
     genes = [f"g{i}" for i in range(5)]
@@ -42,7 +42,7 @@ def test_bare_return_scores_zeroes_nonpositive():
     """Pins the bare+return_scores behavior: composite(mode="bare", return_scores=True) reports
     0.0 for genes gated out under the DEFAULT dC>0 gate -- both the "classic" non-positive-phi
     case AND the sign-mismatch case (phi>0 but dC<=0), not the raw (possibly large, positive)
-    value. Reachable via `focal composite --mode bare` (cli --mode has no choices=)."""
+    value. Reachable via `recast composite --mode bare` (cli --mode has no choices=)."""
     res, a = _res_and_adata()
     scored = composite(res, a, "state", mode="bare", return_scores=True)
     d = dict(scored["A"])

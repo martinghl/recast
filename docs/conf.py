@@ -1,4 +1,4 @@
-"""Sphinx configuration for the FOCAL documentation.
+"""Sphinx configuration for the RECAST documentation.
 
 Two deliberate choices worth knowing before you edit this file:
 
@@ -10,7 +10,7 @@ Two deliberate choices worth knowing before you edit this file:
   by hand against the real model and real data (see `tutorials/index.md`, "How these were
   produced"), so what a reader sees is what the code actually printed.
 
-* No `sphinx.ext.autodoc`. Importing `focal` to introspect it would pull in torch, captum,
+* No `sphinx.ext.autodoc`. Importing `recast` to introspect it would pull in torch, captum,
   scimilarity and scvi-tools on the docs builder. `usage.md` is a hand-maintained reference
   that already documents the surface more precisely than signatures would, including the
   device-placement and gene-alignment gotchas autodoc cannot see.
@@ -18,13 +18,13 @@ Two deliberate choices worth knowing before you edit this file:
 import re
 from pathlib import Path
 
-project = "FOCAL"
-copyright = "2026, The FOCAL authors"
-author = "The FOCAL authors"
+project = "RECAST"
+copyright = "2026, The RECAST authors"
+author = "The RECAST authors"
 
 # single source of truth for the version: the package, read as text so this file never
-# imports focal (which would drag torch onto the docs builder)
-_init = (Path(__file__).parent.parent / "focal" / "__init__.py").read_text()
+# imports recast (which would drag torch onto the docs builder)
+_init = (Path(__file__).parent.parent / "recast" / "__init__.py").read_text()
 release = re.search(r'__version__ = "([^"]+)"', _init).group(1)
 version = release
 
@@ -42,12 +42,12 @@ nb_execution_mode = "off"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
 html_theme = "furo"
-html_title = f"FOCAL {release}"
+html_title = f"RECAST {release}"
 # No html_static_path / templates_path: neither directory has any content, and git does not
 # track empty directories -- declaring them made the local build pass while the build from a
 # fresh clone (i.e. Read the Docs, with fail_on_warning) failed on "entry does not exist".
 html_theme_options = {
-    "source_repository": "https://github.com/martinghl/focal",
+    "source_repository": "https://github.com/martinghl/recast",
     "source_branch": "main",
     "source_directory": "docs/",
 }

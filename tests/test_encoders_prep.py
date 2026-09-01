@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from focal.centroid import mean_lognorm_centroid
-from focal.encoders import SCimilarityEncoder, prep_counts
+from recast.centroid import mean_lognorm_centroid
+from recast.encoders import SCimilarityEncoder, prep_counts
 
 RAW = np.array([[0, 5, 0, 15],
                 [3, 0, 0, 7],

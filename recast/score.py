@@ -1,4 +1,4 @@
-"""FOCAL scoring path: gene set in -> per-cluster FOCAL score out (reference baseline, dC>0-gated).
+"""RECAST scoring path: gene set in -> per-cluster RECAST score out (reference baseline, dC>0-gated).
 Per-cluster only. Reuses attribute() with baseline='reference' and the composite weight ladder."""
 import numpy as np, pandas as pd
 import scipy.sparse as sp
@@ -27,7 +27,7 @@ def _weight_frame(result, adata, cluster_key, composite, layer, gate):
                              for s in result.genes}, index=list(A.index))
     return composite_weights(result, adata, cluster_key, mode=composite, layer=layer, gate=gate)
 
-def score_gene_set_focal(enc, adata, cluster_key, gene_set, *, reference="rest",
+def score_gene_set_recast(enc, adata, cluster_key, gene_set, *, reference="rest",
                          composite=None, layer=None, device=None, gate="dC", _result=None):
     res = _result if _result is not None else cluster_attribution(enc, adata, cluster_key, reference,
                                                                    device, gate=gate)
@@ -47,13 +47,13 @@ def score_gene_set_panel(enc, adata, cluster_key, gene_sets, *, reference="rest"
     """Long-form df (variant, signature, cluster, n_genes_found, score_sum, score_mean, score_frac)
     scoring every gene_set in `gene_sets` (name -> genes) across every composite variant in
     `composites` (None -> "bare"). The cluster attribution is computed ONCE via cluster_attribution
-    and reused (via score_gene_set_focal's `_result` escape hatch) for every signature x variant."""
+    and reused (via score_gene_set_recast's `_result` escape hatch) for every signature x variant."""
     res = cluster_attribution(enc, adata, cluster_key, reference, device, gate=gate)   # ONE attribution pass
     frames = []
     for comp in composites:
         vname = "bare" if comp is None else comp
         for sig, genes in gene_sets.items():
-            df = score_gene_set_focal(enc, adata, cluster_key, genes, reference=reference,
+            df = score_gene_set_recast(enc, adata, cluster_key, genes, reference=reference,
                                       composite=comp, layer=layer, device=device, gate=gate, _result=res)
             df.insert(0, "signature", sig); df.insert(0, "variant", vname)
             frames.append(df)
@@ -84,13 +84,13 @@ def _calibrate_columns(S, method):
 def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_sets, *,
                                                 reference="rest", calibrate=None, device=None,
                                                 gate="dC", centroid="mean_lognorm", _result=None):
-    """Per-CELL FOCAL scoring (companion to the per-cluster score_gene_set_focal). For candidate state
+    """Per-CELL RECAST scoring (companion to the per-cluster score_gene_set_recast). For candidate state
     c with marker panel G_c and cell i:
 
         S_i(c) = mean_{g in G_c}  max(0, x_ig - C_ref,g[c]) * max(0, phi_c[g])
 
     x_i = the cell's tp10k-lognorm expression; C_ref[c] = the reference centroid of c's reference cells
-    (mean of per-cell lognorm by default); phi_c = the FOCAL contrastive attribution for c (positive
+    (mean of per-cell lognorm by default); phi_c = the RECAST contrastive attribution for c (positive
     channel). I.e. each panel gene's
     reference-relative over-expression in this cell, weighted by how much that gene drives the encoder's
     c-vs-reference distinction, averaged over the panel.
@@ -122,7 +122,7 @@ def score_cells_attribution_weighted_expression(enc, adata, cluster_key, gene_se
     -----
     Leakage: this scores every cell with an attribution fit on ALL cells (transductive) -- correct for
     labelling/inspection. For an unbiased supervised benchmark, fit the attribution on a train split and
-    score held-out cells (cross-validated), as in the FOCAL per-cell benchmark.
+    score held-out cells (cross-validated), as in the RECAST per-cell benchmark.
     """
     if centroid not in ("pseudobulk", "mean_lognorm"):
         raise ValueError(f"centroid must be 'pseudobulk' or 'mean_lognorm', got {centroid!r}")

@@ -1,6 +1,6 @@
 import numpy as np
 import scipy.sparse as sp
-from focal.centroid import pseudobulk_centroid
+from recast.centroid import pseudobulk_centroid
 
 def test_centroid_proportions():
     counts = np.array([[3., 1.], [1., 3.]])            # gene totals 4,4 -> prop .5,.5
