@@ -99,13 +99,14 @@ def emit_qc_warnings(qc_frame, cos_u_warn=0.9, dprime_warn=0.5, min_cells=20, st
 
 
 def contrast_qc(enc, adata, cluster_key, target=None, reference="siblings",
-                n_splits=10, seed=0):
+                n_splits=10, seed=0, embeddings=None):
     """Standalone embedding-only QC (no attribution): DataFrame indexed by state, QC_COLUMNS.
 
     Answers "are these two groups separable enough for a RECAST contrast?" without running IG —
     e.g. `contrast_qc(enc, adata, "state", target="A", reference=["B"])` for one cluster pair,
     or with defaults for every state vs its siblings (the same contrasts cluster_attribution
-    would attribute)."""
+    would attribute). Every cell is embedded once; pass `embeddings` (cells x dim, adata order)
+    to reuse an embedding computed earlier."""
     from .contrast import resolve_reference
     from .io import resolve_labels
     labels = resolve_labels(adata, cluster_key)
@@ -114,9 +115,11 @@ def contrast_qc(enc, adata, cluster_key, target=None, reference="siblings",
         states = sorted(set(labels))
     else:
         states = [target] if isinstance(target, str) else list(target)
+    Z = np.asarray(enc.embed(counts) if embeddings is None else embeddings)   # ONE encoder pass
+    if Z.ndim != 2 or Z.shape[0] != counts.shape[0]:
+        raise ValueError(f"embeddings must be (cells x dim) with {counts.shape[0]} rows, got {Z.shape}")
     rows = {}
     for s in states:
         tmask, rmask = resolve_reference(labels, s, reference)
-        rows[s] = qc_from_embeddings(enc.embed(counts[tmask]), enc.embed(counts[rmask]),
-                                     n_splits=n_splits, seed=seed)
+        rows[s] = qc_from_embeddings(Z[tmask], Z[rmask], n_splits=n_splits, seed=seed)
     return pd.DataFrame(rows).T[QC_COLUMNS]

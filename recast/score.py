@@ -9,14 +9,16 @@ from .contrast import resolve_reference
 from .io import gate_array, resolve_labels
 
 def cluster_attribution(enc, adata, cluster_key, reference="rest", device=None, gate="dC",
-                        centroid="mean_lognorm", qc="warn"):
+                        centroid="mean_lognorm", qc="warn", embeddings=None):
     """AttributionResult: φ per gene×cluster, REFERENCE baseline (research-consistent), dC>0-gated
     rank by default (gate="phi" reproduces the legacy attribution-sign-gated rank). centroid passes
     through to attribute() (default 'mean_lognorm' = the research/slides recipe; 'pseudobulk' opt-in).
     qc passes through too ('warn' default: attach result.qc + ContrastQCWarning on unreliable
-    contrasts; 'silent' attach-only; 'off' skip)."""
+    contrasts; 'silent' attach-only; 'off' skip), as does embeddings (a precomputed enc.embed(adata.X)
+    to skip the one encoder pass)."""
     return attribute(enc, adata, cluster_key, target=None, reference=reference,
-                     device=device, baseline="reference", gate=gate, centroid=centroid, qc=qc)
+                     device=device, baseline="reference", gate=gate, centroid=centroid, qc=qc,
+                     embeddings=embeddings)
 
 def _weight_frame(result, adata, cluster_key, composite, layer, gate):
     if composite is None:

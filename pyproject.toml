@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sc-recast"
-version = "0.7.0"
+version = "0.7.1"
 description = "Reference-Conditioned Attribution of Single-cell Transcriptomes: genes that define a target-vs-reference cell state."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -5,6 +5,7 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 import torch.nn as nn
+from .centroid import lognorm_rows
 
 class Encoder:
     """Interface: subclasses implement .embed(counts)->np.ndarray (L2-normalized) and .torch_encode(x)->tensor."""
@@ -37,10 +38,10 @@ class StubEncoder(Encoder):
 def prep_counts(counts, normalize):
     """Dense float32 view of `counts`, optionally per-cell tp10k-log-normalized.
 
-    Densifying is not cosmetic: scimilarity's CellEmbedding.get_embeddings inspects `X.data` with
-    `isinstance(..., zarr.core.Array)`, which raises AttributeError on zarr >= 3 (the attribute was
-    removed). Any sparse matrix reaching it therefore crashes on a modern zarr, so we hand it a
-    dense array and the question never arises.
+    This is the dense recipe; SCimilarityEncoder.embed no longer routes through it (0.7.1: sparse
+    input stays sparse and is densified one batch at a time, see .embed), but it remains the
+    definition of the normalization -- centroid.lognorm_rows reproduces it elementwise on sparse
+    input -- and the convenient way to hand a small dense matrix to any encoder.
 
     normalize=True applies log1p(1e4 * per-cell gene proportions), the input SCimilarity expects.
     Empty cells (zero library) yield an all-zero row rather than a division by zero, matching
@@ -49,9 +50,7 @@ def prep_counts(counts, normalize):
     X = X.astype("float32")
     if not normalize:
         return X
-    totals = X.sum(axis=1, keepdims=True)
-    totals[totals == 0] = 1.0
-    return np.log1p(1e4 * X / totals).astype("float32")
+    return lognorm_rows(X)
 
 class SCimilarityEncoder(Encoder):
     """SCimilarity contrastive encoder (genentech/scimilarity CellEmbedding). Expects the model dir
@@ -82,12 +81,25 @@ class SCimilarityEncoder(Encoder):
         self.device = torch.device(device) if device is not None else torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
         self.normalize = bool(normalize)
-        # use_gpu keeps CellEmbedding's own .get_embeddings() (used by .embed()) placing its input
-        # profiles on the same device self._net (== self._ce.model, moved below) ends up on.
         self._ce = CellEmbedding(model_path, use_gpu=(self.device.type == "cuda"))
         self._net = self._ce.model.to(self.device)
-    def embed(self, counts):
-        return np.asarray(self._ce.get_embeddings(prep_counts(counts, self.normalize)))
+    def embed(self, counts, batch_size=10000):
+        """(cells x dim) embeddings of `counts` (raw counts with normalize=True, else already
+        normalized). Sparse input stays sparse through the normalization and is densified one batch
+        at a time, so no whole-matrix dense copy is made; batching (10,000 cells), dtype, inference
+        mode and the forward are those of scimilarity's CellEmbedding.get_embeddings, which this
+        reproduces for dense input (get_embeddings itself cannot take a sparse matrix on zarr >= 3)."""
+        X = lognorm_rows(counts) if self.normalize else counts
+        dev = next(self._net.parameters()).device
+        parts = []
+        with torch.inference_mode():
+            for i in range(0, X.shape[0], batch_size):
+                B = X[i:i + batch_size]
+                B = B.toarray() if sp.issparse(B) else np.asarray(B)
+                parts.append(self._net(torch.as_tensor(B, dtype=torch.float32, device=dev)).detach().cpu().numpy())
+        if not parts:
+            raise ValueError("no cells to embed")
+        return np.vstack(parts)
     def torch_encode(self, x):
         dev = next(self._net.parameters()).device
         return self._net(x.to(dev))

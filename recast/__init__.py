@@ -1,5 +1,5 @@
 """RECAST — Reference-Conditioned Attribution of Single-cell Transcriptomes."""
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 from .io import AttributionResult
 from .composite import composite

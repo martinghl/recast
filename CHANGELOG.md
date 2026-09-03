@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.1
+
+- **One encoder pass per call.** `attribute` / `cluster_attribution` used to re-embed the target
+  and the reference cells for every state and re-normalize the whole count matrix for both
+  centroids, so a K-state call cost about K encoder passes plus 4K dense passes over the matrix
+  (on a 25,000-cell atlas with ~40 types: minutes). They now embed every cell once, sum the matrix
+  per label once (`recast.centroid.LabelProfiles`), and the per-state loop only slices the cached
+  embeddings, forms u, reads the two centroids off the label sums and runs Integrated Gradients on
+  one vector. `contrast_qc` embeds once too. New optional `embeddings=` on `attribute`,
+  `cluster_attribution` and `contrast_qc` to reuse an embedding computed earlier.
+- **Sparse input stays sparse.** `SCimilarityEncoder.embed` normalizes a sparse matrix without
+  densifying it (`recast.centroid.lognorm_rows`, elementwise identical to `prep_counts`) and
+  densifies one 10,000-cell batch at a time, with the batching, dtype, inference mode and forward
+  of scimilarity's `CellEmbedding.get_embeddings` (which it reproduces for dense input).
+- Numbers: identical definition; centroids are now accumulated in float64 instead of the matrix's
+  float32, and embeddings come from whole-atlas batches instead of per-state batches, so
+  attributions agree with 0.7.0 to float32 rounding (see `tests/test_one_pass.py`), not bitwise.
+  `_attribute_one` (single contrast from scratch) and `recast_standalone.py` keep the per-contrast
+  path.
+- Equivalence check against 0.7.0 on 26 real objects (20 lineage subsets, 6 whole atlases; 140 states): top-20 and
+  top-50 panels identical for every state, genome-wide attribution Spearman >= 0.99997, max relative attribution
+  difference 1e-5, max |dC| difference 4e-5 (one gate sign flip on a gene with |dC| below that, i.e. float32
+  rounding of the label sums). Selection call 0.4-8 s per object where 0.7.0 took 0.2-635 s.
+
+
 ## 0.5.0
 
 - **New: contrast QC** (`recast/qc.py`). RECAST's selection rides on one vector,
