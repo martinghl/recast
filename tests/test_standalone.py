@@ -17,26 +17,24 @@ _spec.loader.exec_module(recast_standalone)
 
 
 def _leak_fixture():
-    """5 genes, target T vs reference R. 'driver'/'driver2' are genuinely up in T (dC>0, phi>0) --
-    honest markers. 'leak' has POSITIVE attribution (phi>0) but is actually DOWN in T vs R (dC<0) --
-    the exact sign-mismatch the dC>0 gate must exclude. 'down1'/'down2' are consistently down
-    (phi<0, dC<0). NOTE: this is NOT the same fixture as tests/test_attribute.py's _leak_fixture --
-    that one was grid-searched for the package's baseline='reference' IG call, which
-    recast_standalone.py's _attribute_one doesn't support (it's zero-baseline only, matching its
-    pre-existing behavior -- that support gap is out of scope here). This fixture (seed=0, 5 genes,
-    per-gene uniform Poisson rates) was independently grid-searched for recast_standalone's
-    zero-baseline IG + StubEncoder pipeline and verified bit-identical across repeated runs on this
-    environment (deterministic: no dropout, fixed IG n_steps default, CPU)."""
-    rng = np.random.default_rng(0)
-    n, n_genes = 25, 5
-    lam_T = rng.uniform(0.5, 60, size=n_genes)
-    lam_R = rng.uniform(0.5, 60, size=n_genes)
-    T = rng.poisson(lam_T, size=(n, n_genes))
-    R = rng.poisson(lam_R, size=(n, n_genes))
+    """3 genes, target T vs reference R -- the SAME fixture as tests/test_attribute.py, which is
+    now possible because recast_standalone._attribute_one runs the same reference-baseline IG call
+    as recast/attribution.py (0.8.0 closed that support gap; before it, the standalone script was
+    zero-baseline only and needed its own grid-searched counts).
+
+    'driver' is genuinely up in T (dC>0, phi>0) -- an honest marker. 'leak' has POSITIVE attribution
+    (phi>0) but is actually DOWN in T vs R (dC<0) -- the sign mismatch the dC>0 gate must exclude.
+    'filler' is the mirror case (phi<0, dC>0): under gate='dC' it is kept and ranks ahead of 'leak';
+    under the legacy gate='phi' it is dropped and ranks behind. Counts/seed grid-searched over the
+    real StubEncoder+IG pipeline, deterministic on CPU."""
+    rng = np.random.default_rng(23)
+    nT, nR = 25, 25
+    T = np.c_[rng.poisson(40, nT), rng.poisson(8, nT), rng.poisson(2, nT)]
+    R = np.c_[rng.poisson(1, nR), rng.poisson(100, nR), rng.poisson(3, nR)]
     X = np.vstack([T, R]).astype("float32")
     A = ad.AnnData(X)
-    A.var_names = ["driver2", "leak", "down1", "down2", "driver"]
-    A.obs["state"] = ["T"] * n + ["R"] * n
+    A.var_names = ["driver", "leak", "filler"]
+    A.obs["state"] = ["T"] * nT + ["R"] * nR
     return A
 
 
@@ -47,29 +45,34 @@ def test_standalone_default_gate_ranks_planted_up_gene_above_sign_mismatch_gene(
     A = _leak_fixture()
     enc = recast_standalone.StubEncoder(A.n_vars)
 
-    # pin the underlying sign mismatch this test relies on
+    # pin the underlying sign mismatch this test relies on, on the SAME centroid recipe the
+    # attribute() calls below use. Both pin centroid='pseudobulk' for the identical reason
+    # tests/test_attribute.py does: the fixture's auxiliary 'filler' gene has dC>0 only under the
+    # pseudobulk centroid (mean_lognorm puts it marginally below zero), and the documented ranking
+    # needs it kept. The gate rule itself is centroid-independent.
     labels = A.obs["state"].to_numpy()
     tmask, rmask = recast_standalone.resolve_reference(labels, "T", "siblings")
-    dC = recast_standalone.pseudobulk_centroid(A.X, tmask) - recast_standalone.pseudobulk_centroid(A.X, rmask)
-    dC_by_gene = dict(zip(A.var_names, dC))
-    assert dC_by_gene["leak"] < 0 and dC_by_gene["driver"] > 0 and dC_by_gene["driver2"] > 0
+    cfn = recast_standalone.CENTROIDS["pseudobulk"]
+    dC_by_gene = dict(zip(A.var_names, cfn(A.X, tmask) - cfn(A.X, rmask)))
+    assert dC_by_gene["leak"] < 0 and dC_by_gene["driver"] > 0 and dC_by_gene["filler"] > 0
 
     attribution_df, genes_dict, meta = recast_standalone.attribute(
-        enc, A, "state", target="T", reference="siblings", device="cpu")   # default gate="dC"
-    assert meta["gate"] == "dC"
+        enc, A, "state", target="T", reference="siblings", device="cpu",
+        centroid="pseudobulk")     # default gate="dC", default baseline="reference"
+    assert meta["gate"] == "dC" and meta["baseline"] == "reference"
     assert attribution_df["T"]["leak"] > 0     # phi>0 (pinned above: dC<0 -- the sign mismatch)
 
     ranked = genes_dict["T"]
     assert ranked.index("driver") < ranked.index("leak")       # planted up-gene beats the sign-mismatch gene
-    assert ranked.index("driver2") < ranked.index("leak")
+    assert ranked.index("filler") < ranked.index("leak")       # dC>0 but phi<0 still beats the mismatch
 
-    # legacy gate: 'leak' ranks purely on its own positive phi, ahead of the (phi<0) down genes --
+    # legacy gate: 'leak' ranks purely on its own positive phi, ahead of the (phi<0) 'filler' --
     # the leak this fixture is named for
     _, genes_dict_phi, meta_phi = recast_standalone.attribute(
-        enc, A, "state", target="T", reference="siblings", device="cpu", gate="phi")
+        enc, A, "state", target="T", reference="siblings", device="cpu", gate="phi",
+        centroid="pseudobulk")
     assert meta_phi["gate"] == "phi"
-    assert genes_dict_phi["T"].index("leak") < genes_dict_phi["T"].index("down1")
-    assert genes_dict_phi["T"].index("leak") < genes_dict_phi["T"].index("down2")
+    assert genes_dict_phi["T"].index("leak") < genes_dict_phi["T"].index("filler")
 
 
 def test_standalone_bad_gate_raises():

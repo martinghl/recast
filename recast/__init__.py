@@ -1,5 +1,5 @@
 """RECAST — Reference-Conditioned Attribution of Single-cell Transcriptomes."""
-__version__ = "0.7.1"
+__version__ = "0.8.0"
 
 from .io import AttributionResult
 from .composite import composite
@@ -8,6 +8,7 @@ _LAZY = {"attribute": ".attribution", "cluster_attribution": ".score",
          "score_gene_set_recast": ".score", "score_gene_set_panel": ".score",
          "score_cells_attribution_weighted_expression": ".score",
          "contrast_qc": ".qc", "ContrastQCWarning": ".qc",
+         "SiblingReferenceWarning": ".contrast",
          "SCimilarityEncoder": ".encoders", "SSLEncoder": ".encoders",
          "SCVIEncoder": ".encoders", "StubEncoder": ".encoders", "Encoder": ".encoders"}
 
@@ -19,6 +20,6 @@ def __getattr__(name):
 
 __all__ = ["attribute", "composite", "cluster_attribution", "score_gene_set_recast",
            "score_gene_set_panel", "score_cells_attribution_weighted_expression",
-           "contrast_qc", "ContrastQCWarning",
+           "contrast_qc", "ContrastQCWarning", "SiblingReferenceWarning",
            "SCimilarityEncoder", "SSLEncoder", "SCVIEncoder",
            "AttributionResult", "__version__"]

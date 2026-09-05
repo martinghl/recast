@@ -21,7 +21,8 @@ def _cmd_attribute(a):
     adata = read_h5ad(a.h5ad)
     enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
     ref = a.reference if a.reference in ("siblings", "rest") else [s for s in a.reference.split(",")]
-    res = attribute(enc, adata, a.cluster_key, target=a.target, reference=ref)
+    res = attribute(enc, adata, a.cluster_key, target=a.target, reference=ref,
+                    baseline=a.baseline, gate=a.gate, centroid=a.centroid)
     write_attribution(res, a.out)
     return 0
 
@@ -63,7 +64,9 @@ def _cmd_score_cells(a):
     P.insert(0, "predicted", P.idxmax(axis=1))
     P.to_csv(a.out, index_label="cell"); return 0
 
-def main(argv=None):
+def build_parser():
+    """The full `recast` argument parser. Split out of main() so the defaults are inspectable --
+    tests assert that `recast attribute` defaults to the published C_R -> C_T baseline."""
     p = argparse.ArgumentParser(prog="recast", description="Reference-Conditioned Attribution of Single-cell Transcriptomes")
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("attribute")
@@ -71,6 +74,16 @@ def main(argv=None):
                    choices=["stub", "scimilarity", "ssl", "scvi"]); a.add_argument("--model", default=None)
     a.add_argument("--cluster-key", required=True); a.add_argument("--target", default=None)
     a.add_argument("--reference", default="siblings"); a.add_argument("--out", required=True)
+    a.add_argument("--baseline", default="reference", choices=["reference", "zero"],
+                   help="IG path start. 'reference' (default) integrates from the reference profile "
+                        "to the target profile (C_R -> C_T), the published RECAST estimand. 'zero' is "
+                        "textbook IG from the all-zero vector (0 -> C_T) -- a different quantity, not "
+                        "the manuscript method.")
+    a.add_argument("--gate", default="dC", choices=["dC", "phi"],
+                   help="'dC' (default): keep genes with centroid(target) > centroid(reference). "
+                        "'phi': legacy attribution-sign gate.")
+    a.add_argument("--centroid", default="mean_lognorm", choices=["mean_lognorm", "pseudobulk"],
+                   help="profile recipe for C_T and C_R; 'mean_lognorm' (default) is the manuscript's.")
     a.set_defaults(fn=_cmd_attribute)
     c = sub.add_parser("composite")
     c.add_argument("--attr", required=True); c.add_argument("--h5ad", required=True)
@@ -93,5 +106,8 @@ def main(argv=None):
                     help="reference-centroid recipe; default 'mean_lognorm' = the research/slides method "
                          "(mean of per-cell lognorm); 'pseudobulk' pools counts before the log (opt-in)")
     sc.add_argument("--out", required=True); sc.set_defaults(fn=_cmd_score_cells)
-    args = p.parse_args(argv)
+    return p
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     return args.fn(args)

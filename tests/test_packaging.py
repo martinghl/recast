@@ -1,6 +1,6 @@
 def test_version():
     import recast
-    assert recast.__version__ == "0.7.1"
+    assert recast.__version__ == "0.8.0"
 
 
 def test_torchfree_import():

@@ -7,10 +7,12 @@ foundation-model encoder, RECAST returns the genes that DEFINE a target-vs-refer
 
   1. embed cells with the FM                      -> L2-normalized vectors
   2. contrast direction  u = normalize(mean(enc(target)) - mean(enc(reference)))
-  3. denoised reference centroid  C  of the target cluster -- by default the mean of the cells' per-cell
-     log1p(1e4 * proportion) profiles (--centroid mean_lognorm; --centroid pseudobulk pools counts
-     before the log instead)
-  4. Integrated-Gradients attribute C through f(x) = <enc(x), u>
+  3. denoised expression profiles C_T (target) and C_R (reference) -- by default the mean of each set's
+     per-cell log1p(1e4 * proportion) profiles (--centroid mean_lognorm; --centroid pseudobulk pools
+     counts before the log instead)
+  4. Integrated-Gradients attribute C_T through f(x) = <enc(x), u> ALONG THE PATH FROM C_R
+     (--baseline reference, the default and the published RECAST estimand: sum_g phi_g ~= f(C_T)-f(C_R));
+     --baseline zero is textbook IG from the all-zero vector instead, a different quantity
   5. rank genes by attribution, gated per target state (dC = centroid(target)-centroid(reference)
      > 0 by default, i.e. the gene must be genuinely up-regulated -- --gate phi reproduces the legacy
      attribution-sign gate)   (optionally reweight with the composite marker layer)
@@ -36,7 +38,10 @@ Encoders:  stub | scimilarity | ssl | scvi
   - stub              : identity encoder, no weights — for testing the pipeline end to end.
 
 --reference : "siblings" | "rest" | a comma-list of labels ("A,B,C").  ("siblings"=="rest" within the
-              given .h5ad — subset to the lineage first for fine states.)
+              given .h5ad — RECAST reads no cell-type hierarchy, so subset to the lineage first for
+              fine states, or list the sibling labels; "siblings" on a >2-label object warns.)
+--baseline  : "reference" (default, the manuscript method: IG integrates C_R -> C_T) or "zero"
+              (textbook IG, 0 -> C_T -- answers a different question and selects worse markers).
 --target    : a single state label; omit to attribute EVERY state vs its reference.
 --composite : omit for the raw RECAST ranking, or one of
               bare | tauE | discr | discrRU | tauE_discr | tauE_discrRU  (marker-specialization layer).
@@ -53,6 +58,7 @@ Deps: numpy, scipy, pandas, anndata, torch, captum  (+ scimilarity / scvi-tools 
 RECAST is standalone — it does NOT depend on scattr (the tauE / Mann-Whitney primitives are vendored below).
 """
 import argparse
+import warnings
 import os
 import sys
 
@@ -267,24 +273,61 @@ def resolve_labels(adata, cluster_key):
 
 
 GATES = ("dC", "phi")
+BASELINES = ("zero", "reference")
+IG_STEPS = 50
 
 
-def _attribute_one(enc, counts, target_mask, ref_mask, device, centroid="mean_lognorm"):
+class SiblingReferenceWarning(UserWarning):
+    """reference='siblings' was resolved as EVERY other cell in the given AnnData (mirrors
+    recast.contrast.SiblingReferenceWarning)."""
+
+
+def warn_if_siblings_is_rest(labels, reference):
+    """Warn once when reference='siblings' cannot be distinguished from 'rest' (>2 labels present)."""
+    if reference != "siblings":
+        return None
+    present = sorted(set(np.asarray(labels).astype(str)))
+    if len(present) <= 2:
+        return None
+    msg = (f"reference='siblings' resolves to every other cell in this AnnData "
+           f"({len(present)} labels present: {', '.join(present[:6])}"
+           f"{', ...' if len(present) > 6 else ''}). RECAST does not read a cell-type hierarchy, so "
+           f"'siblings' and 'rest' are the same mask here. If this object is already one lineage, "
+           f"this is the sibling contrast you want; otherwise subset it to the lineage first, or "
+           f"pass the sibling labels explicitly.")
+    warnings.warn(msg, SiblingReferenceWarning, stacklevel=3)
+    return msg
+
+
+def _attribute_one(enc, counts, target_mask, ref_mask, device, centroid="mean_lognorm",
+                   baseline="reference"):
+    """baseline='reference' (default) integrates from the reference profile to the target profile
+    (C_R -> C_T, the published RECAST estimand, sum_g phi_g ~= f(C_T)-f(C_R)); 'zero' is textbook IG
+    from the all-zero vector (0 -> C_T), a different quantity. Mirrors recast/attribution.py."""
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be 'zero' or 'reference', got {baseline!r}")
     cfn = CENTROIDS[centroid]
     u = contrast_direction(enc.embed(counts[target_mask]), enc.embed(counts[ref_mask]))
     C = cfn(counts, target_mask)
-    C_ref = cfn(counts, ref_mask)   # needed for the dC>0 gate (mirrors recast/attribution.py)
+    C_ref = cfn(counts, ref_mask)   # the IG path start (baseline='reference') and the dC>0 gate
     dC = C - C_ref
     x = torch.as_tensor(C[None], dtype=torch.float32, device=device).requires_grad_(True)
     ut = torch.as_tensor(u[None], dtype=torch.float32, device=device)
+    base = (torch.as_tensor(C_ref[None], dtype=torch.float32, device=device)
+            if baseline == "reference" else torch.zeros_like(x))
     ig = IntegratedGradients(enc.centroid_module().to(device))
-    att = ig.attribute(x, target=0, additional_forward_args=(ut,), baselines=torch.zeros_like(x))
+    att = ig.attribute(x, target=0, additional_forward_args=(ut,), baselines=base, n_steps=IG_STEPS)
     return att.detach().cpu().numpy().ravel(), dC
 
 
 def attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, gate="dC",
-              centroid="mean_lognorm"):
+              centroid="mean_lognorm", baseline="reference"):
     """Returns (attribution_df: genes x states, genes_dict: state -> ranked gene list, meta).
+    baseline: 'reference' (default) runs Integrated Gradients along the straight path from the
+    reference profile to the target profile, C_R -> C_T -- the published RECAST estimand, with
+    sum_g phi_g ~= f(C_T) - f(C_R). 'zero' is textbook IG from the all-zero expression vector
+    (0 -> C_T), whose completeness object is f(C_T) - f(0): a different question, and measurably
+    worse for marker selection. Same default and meaning as recast.attribute().
     gate: 'dC' (default, CORRECT) ranks genes by centroid(target)-centroid(reference) > 0 -- i.e.
     the gene must be genuinely up-regulated in the target state, not merely have positive IG
     attribution. 'phi' is the legacy rule (the attribution's own sign > 0), kept as a back-compat
@@ -298,8 +341,11 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
         raise ValueError(f"gate must be one of {GATES}, got {gate!r}")
     if centroid not in CENTROIDS:
         raise ValueError(f"centroid must be one of {sorted(CENTROIDS)}, got {centroid!r}")
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be 'zero' or 'reference', got {baseline!r}")
     device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     labels = resolve_labels(adata, cluster_key)
+    warn_if_siblings_is_rest(labels, reference)     # once per call, not once per state
     counts = adata.X
     genes = list(map(str, adata.var_names))
     if target is None:
@@ -309,12 +355,14 @@ def attribute(enc, adata, cluster_key, target=None, reference="siblings", device
     cols, ranked = {}, {}
     for s in states:
         tmask, rmask = resolve_reference(labels, s, reference)
-        att, dC = _attribute_one(enc, counts, tmask, rmask, device, centroid=centroid)
+        att, dC = _attribute_one(enc, counts, tmask, rmask, device, centroid=centroid,
+                                 baseline=baseline)
         cols[s] = att
         gate_vals = dC if gate == "dC" else att
         order = np.argsort(-np.where(gate_vals > 0, att, -np.inf))   # dC>0 (default) or legacy att>0
         ranked[s] = [genes[j] for j in order]
-    meta = {"reference": reference, "n_genes": len(genes), "gate": gate, "centroid": centroid}
+    meta = {"reference": reference, "n_genes": len(genes), "gate": gate, "centroid": centroid,
+            "baseline": baseline}
     return pd.DataFrame(cols, index=genes), ranked, meta
 
 
@@ -409,8 +457,12 @@ def main(argv=None):
                     help="'dC' (default, correct: centroid target-vs-reference > 0) or 'phi' "
                          "(legacy attribution-sign gate, back-compat escape hatch)")
     ap.add_argument("--centroid", default="mean_lognorm", choices=["mean_lognorm", "pseudobulk"],
-                    help="reference-centroid recipe; default 'mean_lognorm' (research recipe: mean of "
-                         "per-cell lognorm), 'pseudobulk' pools counts before the log")
+                    help="profile recipe for C_T and C_R; default 'mean_lognorm' (research recipe: mean "
+                         "of per-cell lognorm), 'pseudobulk' pools counts before the log")
+    ap.add_argument("--baseline", default="reference", choices=list(BASELINES),
+                    help="IG path start. 'reference' (default, the manuscript method): integrate "
+                         "C_R -> C_T. 'zero': textbook IG from the all-zero vector (0 -> C_T), a "
+                         "different quantity that selects worse markers.")
     ap.add_argument("--composite", default=None, choices=list(_COMPOSITE_MODES),
                     help="marker-specialization layer; omit for the raw RECAST ranking")
     ap.add_argument("--composite-layer", default=None,
@@ -428,7 +480,7 @@ def main(argv=None):
 
     attribution_df, genes_dict, meta = attribute(
         enc, adata, args.cluster_key, target=args.target, reference=reference, device=args.device,
-        gate=args.gate, centroid=args.centroid)
+        gate=args.gate, centroid=args.centroid, baseline=args.baseline)
 
     if args.composite:
         scored = composite(attribution_df, genes_dict, adata, args.cluster_key,
@@ -438,8 +490,8 @@ def main(argv=None):
 
     df = write_markers(scored, args.out, top=args.top)
     tag = f"composite={args.composite}" if args.composite else "raw RECAST"
-    print(f"[RECAST] {len(genes_dict)} state(s), {tag}, gate={args.gate}, ref={reference} "
-          f"-> {len(df)} rows in {args.out}")
+    print(f"[RECAST] {len(genes_dict)} state(s), {tag}, gate={args.gate}, baseline={args.baseline}, "
+          f"ref={reference} -> {len(df)} rows in {args.out}")
     for s in list(genes_dict)[:8]:
         print(f"   {s}: " + ", ".join(g for g, _ in scored[s][:8]))
     return 0

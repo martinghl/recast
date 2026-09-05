@@ -55,6 +55,13 @@ results, at the cost of the outputs being a snapshot rather than continuously re
 you re-run a notebook yourself and a number moves, the version and data provenance are printed
 in the first cell of each one.
 
+The outputs currently committed were produced on **RECAST 0.8.0**. That release changed the
+default IG baseline of `attribute()` from the zero vector to the reference profile — the
+published estimand — so tutorials 1, 2 and 3 print different gene rankings than the 0.7.x
+snapshot they replaced, and their prose was rewritten against the new numbers. Tutorial 5 is
+unchanged because it uses `cluster_attribution()`, which always used the reference baseline.
+See the 0.8.0 entry in `CHANGELOG.md`.
+
 :::{admonition} Reproducing the manuscript is a different job
 :class: note
 

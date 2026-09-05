@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.8.0
+
+**Breaking: `attribute()`'s default IG baseline is now `"reference"`, the published estimand.**
+
+RECAST is defined as Integrated Gradients along the straight path from the reference profile to
+the target profile, `C_R -> C_T`, so that `sum_g phi_g ~= f(C_T) - f(C_R)` — "which genes move the
+population from the reference state to the target state". Up to 0.7.1 the public entry points did
+not compute that by default:
+
+- `recast.attribute()` defaulted to `baseline="zero"`, i.e. textbook IG from the all-zero
+  expression vector, whose completeness object is `f(C_T) - f(0)` — a different question, which
+  favours highly expressed genes over target-specific ones.
+- The `recast attribute` CLI had no `--baseline` flag at all, so it always ran the zero baseline.
+- `recast_standalone.py` hardcoded `baselines=torch.zeros_like(x)` with no way to change it.
+- The README described the method itself as "Integrated Gradients (from a zero baseline to the
+  centroid)" and its quickstarts passed no baseline.
+
+`cluster_attribution()` (and the scoring paths built on it) always forced `baseline="reference"`,
+so per-cluster users and everything downstream of it were unaffected. But anyone following the
+README, the CLI or the standalone script got the other quantity. That is fixed at every surface:
+
+- `attribute()`, `_attribute_one()` and `_ig_attribute()` default to `baseline="reference"`.
+- `recast attribute` gains `--baseline {reference,zero}` (default `reference`), plus `--gate` and
+  `--centroid`, which the CLI also could not previously express. The parser moved into
+  `cli.build_parser()` so the defaults are inspectable.
+- `recast_standalone.py` gains a `baseline=` argument and a `--baseline` flag with the same default
+  and semantics, and records the choice in its returned `meta`.
+- `baseline="zero"` remains available for deliberate comparison, everywhere, and is now documented
+  as what it is rather than as the method.
+
+**Why the default matters, measured rather than asserted.** On 16 Zhao subtypes with the contrast
+direction held fixed, the zero baseline selects worse markers than the reference profile (Recall@20
+0.381 vs 0.592; `focal_nature/rigor/ig_baseline_sensitivity.py`). Independently, on an
+L2-normalizing encoder — which is what SCimilarity's embedding is — the zero vector is a
+singularity of `x -> x/||x||`, so the 50-step Riemann sum does not converge to its own completeness
+target either; the new tests show the reference baseline satisfying completeness to ~1e-8 while the
+zero baseline misses by orders of magnitude on the same input.
+
+**`reference="siblings"` no longer passes silently.** It has always resolved to `~target_mask`,
+identical to `"rest"` — RECAST reads no cell-type hierarchy and cannot find a target's lineage-mates
+on its own. Asking for `"siblings"` on an object with more than two labels now emits a
+`recast.SiblingReferenceWarning` naming what it resolved to; two labels are unambiguous and do not
+warn, and neither does `"rest"` or an explicit label list. Subset the object to the lineage, or pass
+the sibling labels, then silence the warning if you want.
+
+**Tests.** New `tests/test_public_api_estimand.py`: the default baseline at all three entry points,
+the completeness relation that names the estimand, the divergence of the zero baseline (including a
+gene high in both populations that the reference baseline correctly ignores and the zero baseline
+weights), agreement between the Python API, the CLI and the standalone script on identical input
+with no baseline argument anywhere, and the sibling-warning behaviour.
+`tests/test_standalone.py` now shares one fixture with `tests/test_attribute.py`, which the
+zero-baseline-only standalone script previously made impossible.
+
+**No published number changes.** Every script that produced a manuscript figure or table calls
+`cluster_attribution()` or passes an explicit reference-centroid tensor to Captum; none has ever
+called `attribute()`. This release fixes what a reader running the documented commands would get.
+
 ## 0.7.1
 
 - **One encoder pass per call.** `attribute` / `cluster_attribution` used to re-embed the target

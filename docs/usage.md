@@ -7,24 +7,29 @@ readout modes, and the Python/CLI surfaces. For the conceptual "what and why," s
 ## Pipeline recap
 
 `recast.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None,
-baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn")`
+baseline="reference", gate="dC", centroid="mean_lognorm", qc="warn")`
 returns an `AttributionResult`:
 
 - For each target state, embeds the target cells and the reference cells with `enc`,
   takes the L2-normalized difference of their mean embeddings as the contrast direction
   `u`.
-- Builds the target's denoised reference centroid — by default the mean of the target
-  cells' per-cell `log1p(1e4 * proportion)` profiles (`centroid="mean_lognorm"`); the
-  opt-in `centroid="pseudobulk"` pools counts before the log (`log1p(1e4 * gene_total /
-  total_counts)`) instead. Manuscript mapping (current manuscript): the
-  population-level subtype marker-selection benchmark and the per-cell program
-  scoring both use the default `mean_lognorm` (selection's IG path runs from the
-  reference profile to the target profile, i.e. `baseline="reference"` — the
-  `cluster_attribution` default); the transitional cell-state (cycling) Extended
-  Data arm uses `centroid="pseudobulk"` + `baseline="reference"`. Pass the matching
+- Builds the denoised target and reference profiles `C_T` and `C_R` — by default the mean
+  of each set's per-cell `log1p(1e4 * proportion)` expression (`centroid="mean_lognorm"`);
+  the opt-in `centroid="pseudobulk"` pools counts before the log (`log1p(1e4 * gene_total /
+  total_counts)`) instead. Manuscript mapping (current manuscript): the population-level
+  subtype marker-selection benchmark and the per-cell program scoring both use the default
+  `mean_lognorm`; the transitional cell-state (cycling) Extended Data arm uses
+  `centroid="pseudobulk"`. Both use the default `baseline="reference"`. Pass the matching
   recipe when reproducing published numbers.
-- Runs Integrated Gradients (zero baseline) on `f(x) = <enc.torch_encode(x), u>`
-  evaluated at the centroid, producing one attribution value per gene.
+- Runs Integrated Gradients on `f(x) = <enc.torch_encode(x), u>` along the straight path
+  from `C_R` to `C_T` (`baseline="reference"`, the default since 0.8.0), producing one
+  attribution value per gene, with `Σ_g φ_g ≈ f(C_T) − f(C_R)`. This is the published
+  RECAST estimand. `baseline="zero"` integrates from the all-zero expression vector
+  instead (`Σ_g φ_g ≈ f(C_T) − f(0)`): a **different quantity**, kept as an opt-in
+  comparison, worse for marker selection (Recall@20 0.381 vs 0.592 over 16 subtypes), and
+  poorly convergent on an L2-normalizing encoder, where the origin is a singularity.
+  Before 0.8.0 `baseline="zero"` was the default here — results produced with `attribute()`
+  on 0.7.x without an explicit `baseline` are that other quantity, not RECAST.
 - Ranks **every** gene by attribution descending — `result.genes[state]` always
   contains all of `adata.var_names`, not just positive-attribution ones. Genes with
   attribution `<= 0` are ranked last (not dropped) because they argue for the
@@ -108,7 +113,7 @@ zarr 3, so a sparse `.X` reaching it raises `AttributeError` on any modern zarr.
 | Value | Meaning |
 |---|---|
 | `"siblings"` | All cells in `adata` whose label is **not** the target label(s). |
-| `"rest"` | Currently **identical** to `"siblings"` — both resolve to `~target_mask`. The two names are kept distinct for intent/readability, not because they behave differently today. If you want a narrower "siblings within a lineage" comparison, subset `adata` to that lineage before calling `attribute()`. |
+| `"rest"` | **Identical** to `"siblings"` — both resolve to `~target_mask`. The two names are kept distinct for intent/readability, not because they behave differently. RECAST reads no cell-type hierarchy, so it cannot find a target's lineage-mates on its own: for a narrower "siblings within a lineage" comparison, subset `adata` to that lineage before calling `attribute()`, or pass the sibling labels as an explicit list. Asking for `"siblings"` on an object with more than two labels raises a `recast.SiblingReferenceWarning` naming what it resolved to (two labels are unambiguous and do not warn). |
 | `list` / `tuple` / `set` of labels (CLI: comma-separated string, e.g. `B,DC`) | Only cells whose label is in that explicit set. **Not** automatically disjoint from the target — if you list the target's own label as a reference label too, it will be used as both target and reference cells. Exclude it yourself. |
 
 `target` (Python) accepts a single label, a list of labels, or `None` (attribute every
@@ -181,11 +186,12 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
 
 ## Python API reference
 
-- `recast.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, baseline="zero", gate="dC", centroid="mean_lognorm", qc="warn") -> AttributionResult`
+- `recast.attribute(enc, adata, cluster_key, target=None, reference="siblings", device=None, baseline="reference", gate="dC", centroid="mean_lognorm", qc="warn") -> AttributionResult`
   — `device` defaults to `"cuda"` if available, else `"cpu"`; it selects where the
   attribution runs and does **not** move a real encoder's weights. `baseline` is the IG
-  start point (`"zero"` | `"reference"`), `gate` the positive-channel rule (`"dC"` |
-  `"phi"`), `centroid` the reference-profile recipe (`"mean_lognorm"` | `"pseudobulk"`),
+  path start (`"reference"`, the default and the published estimand `C_R → C_T` |
+  `"zero"`, textbook IG `0 → C_T`, a different quantity), `gate` the positive-channel rule
+  (`"dC"` | `"phi"`), `centroid` the profile recipe (`"mean_lognorm"` | `"pseudobulk"`),
   and `qc` the contrast diagnostics (`"warn"` | `"silent"` | `"off"`, attached as
   `result.qc`). Requires `[attribution]`.
 - `recast.composite(result, adata, cluster_key, mode="tauE_discrRU", layer=None, return_scores=False) -> dict`
@@ -227,7 +233,8 @@ or you'll hit a `KeyError` looking up its `discr`/`discrRU` factor.
 ```
 recast attribute --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PATH]
                  --cluster-key KEY [--target LABEL] [--reference siblings|rest|A,B,...]
-                 --out PATH
+                 [--baseline reference|zero] [--gate dC|phi]
+                 [--centroid mean_lognorm|pseudobulk] --out PATH
 
 recast composite --attr PATH --h5ad PATH --cluster-key KEY
                  [--mode {bare,tauE,discr,discrRU,tauE_discr,tauE_discrRU}]
@@ -252,7 +259,10 @@ recast score-cells --h5ad PATH --encoder {stub,scimilarity,ssl,scvi} [--model PA
   `cli._encoder` calls `scvi.model.SCVI.load(model, adata=...)` *before* ever
   constructing `SCVIEncoder`, so the failure is whatever `scvi`'s own loader raises for
   a bad/missing path — typically a `ValueError` from `scvi` itself, not
-  `SCVIEncoder.__init__`'s `ValueError`). `--reference` defaults to `siblings`.
+  `SCVIEncoder.__init__`'s `ValueError`). `--reference` defaults to `siblings`,
+  `--baseline` to `reference` (the published `C_R → C_T` path), `--gate` to `dC` and
+  `--centroid` to `mean_lognorm` — the same defaults as the Python API and as
+  `recast_standalone.py`, which a regression test pins across all three.
 - `recast composite` reads `--attr` (from a prior `recast attribute` run) and `--h5ad`,
   runs `composite(..., return_scores=True)`, and writes only
   `<out-prefix>_markers.csv` (it does not write a new `.h5ad`). `--mode` defaults to

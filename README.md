@@ -24,6 +24,8 @@ other attribution or marker-gene tool.
   ```
   (`--encoder stub` needs no weights — a smoke test; omit `--target` to do every state; add
   `--composite tauE_discrRU` for the marker layer.) Writes a `state,rank,gene,score` CSV.
+  It takes the same `--baseline` / `--gate` / `--centroid` flags as the package CLI, with the
+  same defaults, and a regression test asserts the three entry points agree.
 - **Installable package** — `pip install .` (core) or `pip install ".[attribution]"` (adds the FM
   encoders) for the `recast.attribute()` / `recast.composite()` Python API and the `recast` CLI; see below.
 
@@ -45,17 +47,26 @@ explicit, per gene:
    **Which recipe reproduces which manuscript pipeline:** as of the current manuscript
    the two headline pipelines share one profile — population-level subtype marker
    selection *and* per-cell program scoring are both mean-of-lognorm
-   (`centroid="mean_lognorm"`, the library default; selection additionally runs the IG
-   path from the reference profile, i.e. `baseline="reference"`, which
-   `cluster_attribution` sets by default). The pooled proportion-then-log profile is
-   used in the manuscript by the transitional cell-state (cycling) Extended Data arm —
-   pass `centroid="pseudobulk", baseline="reference"` to reproduce that arm. The
-   recipes are close but not identical; don't mix them when comparing against
-   published numbers.
-3. **Attribute, don't just embed.** Run Integrated Gradients (from a zero baseline to
-   the centroid) on the scalar `f(x) = <encoder(x), u>` — i.e. attribute *how much
-   each gene's expression in the centroid pushes the embedding along the target
-   direction*.
+   (`centroid="mean_lognorm"`, the library default), with the reference-baseline IG path
+   (`baseline="reference"`, also the default since 0.8.0). The pooled proportion-then-log
+   profile is used in the manuscript by the transitional cell-state (cycling) Extended
+   Data arm — pass `centroid="pseudobulk"` to reproduce that arm. The recipes are close
+   but not identical; don't mix them when comparing against published numbers.
+3. **Attribute, don't just embed.** Run Integrated Gradients on the scalar
+   `f(x) = <encoder(x), u>` **along the straight path from the reference profile to the
+   target profile**, `C_R → C_T` (`baseline="reference"`, the default) — i.e. attribute
+   *how much each gene's change from reference to target pushes the embedding along the
+   contrast direction*. The attributions then sum to the quantity the contrast is about,
+   `Σ_g φ_g ≈ f(C_T) − f(C_R)`.
+
+   `baseline="zero"` is available as an opt-in comparison: textbook IG from the all-zero
+   expression vector, `0 → C_T`, which sums to `f(C_T) − f(0)` instead. That is a
+   **different question** — "which of the target's expressed genes push the embedding
+   along `u`, versus no expression at all" — and it favours highly expressed genes over
+   target-specific ones. It is not the published method, it scored worse for marker
+   selection in our sweep (Recall@20 0.381 vs 0.592 over 16 subtypes), and on an
+   L2-normalizing encoder the zero vector is a singularity, so the IG sum does not
+   converge well either. Use the default unless you specifically want that comparison.
 4. **Positive channel, ranked first.** Genes with positive attribution are the ones
    whose expression argues *for* the target over the reference — the ranking puts
    these first, as the state-defining genes. Genes with negative or zero attribution
@@ -149,9 +160,19 @@ P.idxmax(axis=1)                # per-cell predicted state (argmax of the per-st
 
 `adata` is an `AnnData` with raw (or size-consistent) counts in `.X` and the cluster /
 cell-state labels in `.obs["state"]`. `reference` accepts `"siblings"`, `"rest"`
-(currently identical — both mean "every other cell currently in `adata`"; subset
-`adata` to a lineage first if you want a narrower comparison), or an explicit list of
-labels.
+(**identical** — both mean "every other cell currently in `adata`"), or an explicit list
+of labels.
+
+RECAST reads no cell-type hierarchy, so `"siblings"` states an intent it cannot resolve
+on its own: for a fine subtype, subset `adata` to the lineage first (then the other
+labels in the object *are* the siblings) or pass the sibling labels as a list. Asking for
+`"siblings"` on an object with more than two labels emits a `SiblingReferenceWarning`
+naming what it resolved to; silence it with
+`warnings.filterwarnings("ignore", category=recast.SiblingReferenceWarning)` once you
+have made the choice deliberately.
+
+The IG path start is `baseline="reference"` by default in every entry point (Python API,
+CLI, standalone script), which is the published method — you do not need to pass it.
 
 ## Quickstart — CLI
 
@@ -164,7 +185,9 @@ recast composite --attr recast_attr.h5ad --h5ad raw.h5ad --cluster-key state \
 ```
 
 `--reference` takes `siblings` | `rest` | a comma-separated label list (e.g.
-`B,DC`). `--encoder` is one of `stub` | `scimilarity` | `ssl` | `scvi` (`scvi` loads a
+`B,DC`). `--baseline` takes `reference` (default, the published method) | `zero`, and
+`--gate` / `--centroid` expose the same choices as the Python API.
+`--encoder` is one of `stub` | `scimilarity` | `ssl` | `scvi` (`scvi` loads a
 saved model directory via `SCVI.load(model, adata=adata)`, so `--model` must point at a
 directory written by `model.save(...)` against a compatible `AnnData`). Omit `--target`
 to attribute every state found in `--cluster-key`. `recast composite` writes
