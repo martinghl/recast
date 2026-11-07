@@ -1,0 +1,89 @@
+import numpy as np, pandas as pd, anndata as ad
+from recast.io import AttributionResult
+from recast.composite import composite
+
+def test_modes_run_and_specificity():
+    # 2 states, 3 genes; G1 specific to S1 (high & only there), G2 ubiquitous
+    X = np.array([[5., 5., 0.],   # S1
+                  [5., 5., 0.],
+                  [0., 5., 3.],   # S2
+                  [0., 5., 3.]], dtype="float32")
+    A = ad.AnnData(np.log1p(X)); A.var_names = ["G1", "G2", "G3"]
+    A.obs["state"] = ["S1", "S1", "S2", "S2"]
+    attr = pd.DataFrame({"S1": [0.6, 0.6, 0.0]}, index=["G1", "G2", "G3"])  # bare ties G1,G2
+    res = AttributionResult(attr, {"S1": ["G1", "G2", "G3"]})
+    # gate="phi": this synthetic result has no dC (built by hand), so the default gate="dC"
+    # would fall back to phi anyway but emit a RuntimeWarning (see io.gate_array) -- this test is
+    # about mode behavior, not the warning, so pin gate="phi" explicitly (numerically identical
+    # fallback value) to keep it warning-free.
+    for m in ("bare", "tauE", "discr", "discrRU", "tauE_discr", "tauE_discrRU"):
+        out = composite(res, A, "state", mode=m, gate="phi")
+        assert set(out["S1"]) == {"G1", "G2", "G3"}
+    # tauE should break the G1/G2 tie in favour of the specific gene G1
+    assert composite(res, A, "state", mode="tauE", gate="phi")["S1"][0] == "G1"
+
+def test_bad_mode():
+    import pytest
+    with pytest.raises(ValueError):
+        composite(AttributionResult(pd.DataFrame({"S": [0.]}, index=["G"]), {"S": ["G"]}),
+                  None, "state", mode="nope")
+
+def test_dC_gate_default_excludes_leak_gene_phi_gate_includes_it():
+    """composite()'s default gate is dC>0 (pseudobulk target-vs-reference difference), not phi>0
+    (the attribution's own sign). G_leak has the LARGEST raw attribution (0.9) but dC<0 (it is
+    actually down-regulated) -- the exact sign-mismatch the fix closes. G_bg is the mirror case
+    (phi<=0, dC>0) that makes the flip an unambiguous 3-way reordering rather than a tie."""
+    genes = ["G_leak", "G_real", "G_bg"]
+    attr = pd.DataFrame({"S1": [0.9, 0.5, 0.0]}, index=genes)
+    dC = pd.DataFrame({"S1": [-3.0, 2.0, 0.1]}, index=genes)
+    res = AttributionResult(attr, {"S1": genes}, {}, dC=dC)
+    A = ad.AnnData(np.log1p(np.array([[5., 5., 1.], [5., 5., 1.], [0., 5., 1.], [0., 5., 1.]],
+                                     dtype="float32")))
+    A.var_names = genes; A.obs["state"] = ["S1", "S1", "S2", "S2"]
+
+    ranked_dC = composite(res, A, "state", mode="bare")["S1"]
+    assert ranked_dC == ["G_real", "G_bg", "G_leak"]        # G_leak gated out -> ranked last
+
+    ranked_phi = composite(res, A, "state", mode="bare", gate="phi")["S1"]
+    assert ranked_phi == ["G_leak", "G_real", "G_bg"]       # gate="phi": G_leak ranked FIRST
+
+
+def _raw_counts_fixture():
+    """12 cells x 4 genes of raw counts with unequal library sizes, so factors on raw counts and on
+    log-normalized expression differ."""
+    rng = np.random.default_rng(0)
+    X = rng.poisson([[30, 2, 5, 1]] * 6 + [[3, 20, 5, 9]] * 6).astype("float32")
+    X[::2] *= 3
+    genes = ["G1", "G2", "G3", "G4"]
+    A = ad.AnnData(X); A.var_names = genes; A.obs["state"] = ["S1"] * 6 + ["S2"] * 6
+    Xd = X.astype(float)
+    A.layers["lognorm"] = np.log1p(1e4 * Xd / Xd.sum(axis=1, keepdims=True))
+    res = AttributionResult(pd.DataFrame({"S1": [0.5, 0.4, 0.3, 0.2]}, index=genes), {"S1": genes})
+    return A, res
+
+
+def test_raw_counts_in_X_are_lognormalized_for_the_factors():
+    """.X holds raw counts (what attribute() expects): composite() log-normalizes it for the specificity
+    factors, so the default equals an explicit log-normalized layer, and log-normalized .X is used as it is."""
+    A, res = _raw_counts_fixture()
+    for m in ("tauE", "discr", "discrRU", "tauE_discrRU"):
+        raw = composite(res, A, "state", mode=m, gate="phi", return_scores=True)
+        lay = composite(res, A, "state", mode=m, layer="lognorm", gate="phi", return_scores=True)
+        assert [g for g, _ in raw["S1"]] == [g for g, _ in lay["S1"]]
+        assert np.allclose([s for _, s in raw["S1"]], [s for _, s in lay["S1"]], rtol=0, atol=1e-12)
+        B = ad.AnnData(A.layers["lognorm"]); B.var_names = A.var_names; B.obs["state"] = A.obs["state"].values
+        assert composite(res, B, "state", mode=m, gate="phi", return_scores=True) == lay
+
+
+def test_composite_matches_the_standalone_script_on_raw_counts():
+    """The package and recast_standalone.py give the same composite ranking and scores on raw counts."""
+    import importlib.util, os
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recast_standalone.py")
+    spec = importlib.util.spec_from_file_location("recast_standalone", path)
+    sa = importlib.util.module_from_spec(spec); spec.loader.exec_module(sa)
+    A, res = _raw_counts_fixture()
+    for m in ("tauE", "discr", "discrRU", "tauE_discr", "tauE_discrRU"):
+        pkg = composite(res, A, "state", mode=m, gate="phi", return_scores=True)["S1"]
+        std = sa.composite(res.attribution, res.genes, A, "state", mode=m)["S1"]
+        assert [g for g, _ in pkg] == [g for g, _ in std]
+        assert np.allclose([s for _, s in pkg], [s for _, s in std], rtol=0, atol=1e-12)

@@ -1,0 +1,121 @@
+"""recast attribute | composite command-line interface (thin over the library)."""
+import argparse
+
+def _encoder(name, model, n_genes, adata=None):
+    if name == "stub":
+        from .encoders import StubEncoder
+        return StubEncoder(n_genes)
+    from . import encoders
+    if name == "scvi":
+        import scvi
+        return encoders.SCVIEncoder(scvi.model.SCVI.load(model, adata=adata))
+    # --h5ad holds raw counts (the library's contract: the centroid recipes normalize .X themselves);
+    # SCimilarity and SSL log-normalize them at embed() by default (normalize="auto").
+    return {"scimilarity": encoders.SCimilarityEncoder, "ssl": encoders.SSLEncoder,
+            "scfoundation": encoders.SCFoundationEncoder}[name](model)
+
+def _cmd_attribute(a):
+    from .io import read_h5ad, write_attribution
+    from .attribution import attribute
+    adata = read_h5ad(a.h5ad)
+    enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
+    ref = a.reference if a.reference in ("siblings", "rest") else [s for s in a.reference.split(",")]
+    res = attribute(enc, adata, a.cluster_key, target=a.target, reference=ref,
+                    baseline=a.baseline, gate=a.gate, centroid=a.centroid, n_steps=a.n_steps)
+    write_attribution(res, a.out)
+    return 0
+
+def _cmd_composite(a):
+    import pandas as pd
+    from .io import read_h5ad, read_attribution, write_markers, AttributionResult
+    from .composite import composite
+    adata = read_h5ad(a.h5ad); res = read_attribution(a.attr)
+    ranked = composite(res, adata, a.cluster_key, mode=a.mode, layer=a.layer,
+                       return_scores=True)                       # {state: [(gene, score), ...]}
+    genes_order = {s: [g for g, _ in gs] for s, gs in ranked.items()}
+    attr2 = pd.DataFrame({s: {g: sc for g, sc in gs} for s, gs in ranked.items()}).reindex(res.attribution.index)
+    out = AttributionResult(attr2, genes_order, {**res.meta, "composite_mode": a.mode})
+    write_markers(out, a.out_prefix)
+    return 0
+
+def _cmd_score_set(a):
+    import json, pandas as pd
+    from .io import read_h5ad
+    from .score import score_gene_set_panel
+    adata = read_h5ad(a.h5ad)
+    enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
+    gene_sets = json.load(open(a.gene_sets))
+    comps = [None if c in ("bare", "none") else c for c in a.composites.split(",")]
+    ref = a.reference if a.reference in ("siblings", "rest") else a.reference.split(",")
+    df = score_gene_set_panel(enc, adata, a.cluster_key, gene_sets, reference=ref, composites=tuple(comps))
+    df.to_csv(a.out, index=False); return 0
+
+def _cmd_score_cells(a):
+    import json
+    from .io import read_h5ad
+    from .score import score_cells_attribution_weighted_expression
+    adata = read_h5ad(a.h5ad)
+    enc = _encoder(a.encoder, a.model, adata.n_vars, adata=adata)
+    gene_sets = json.load(open(a.gene_sets))
+    ref = a.reference if a.reference in ("siblings", "rest") else a.reference.split(",")
+    cal = None if a.calibrate in ("none", "None") else a.calibrate
+    P = score_cells_attribution_weighted_expression(enc, adata, a.cluster_key, gene_sets,
+                                                     reference=ref, calibrate=cal, centroid=a.centroid)
+    P.insert(0, "predicted", P.idxmax(axis=1))
+    P.to_csv(a.out, index_label="cell"); return 0
+
+ENCODERS = ["stub", "scimilarity", "ssl", "scvi", "scfoundation"]
+
+def build_parser():
+    """The full `recast` argument parser. Split out of main() so the defaults are inspectable --
+    tests assert that `recast attribute` defaults to the reference (C_R -> C_T) baseline."""
+    p = argparse.ArgumentParser(prog="recast", description="Reference-Conditioned Attribution of Single-cell Transcriptomes")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    a = sub.add_parser("attribute")
+    a.add_argument("--h5ad", required=True); a.add_argument("--encoder", required=True,
+                   choices=ENCODERS); a.add_argument("--model", default=None)
+    a.add_argument("--cluster-key", required=True); a.add_argument("--target", default=None)
+    a.add_argument("--reference", default="siblings"); a.add_argument("--out", required=True)
+    a.add_argument("--baseline", default="reference", choices=["reference", "zero"],
+                   help="IG path start. 'reference' (default) integrates from the reference profile "
+                        "to the target profile (C_R -> C_T), the RECAST estimand. 'zero' is "
+                        "textbook IG from the all-zero vector (0 -> C_T) -- a different quantity, not "
+                        "the RECAST method.")
+    a.add_argument("--gate", default="dC", choices=["dC", "phi", "path"],
+                   help="'dC' (default): keep genes with centroid(target) > centroid(reference). "
+                        "'path': genes that rise along the IG path (= 'dC' for the reference baseline). "
+                        "'phi': keep genes with positive attribution.")
+    a.add_argument("--centroid", default="mean_lognorm", choices=["mean_lognorm", "pseudobulk", "median_lognorm"],
+                   help="profile recipe for C_T and C_R (default 'mean_lognorm': the mean of the per-cell "
+                        "log-normalized profiles).")
+    a.add_argument("--n-steps", type=int, default=50, help="Integrated Gradients integration points (default 50).")
+    a.set_defaults(fn=_cmd_attribute)
+    c = sub.add_parser("composite")
+    c.add_argument("--attr", required=True); c.add_argument("--h5ad", required=True)
+    c.add_argument("--cluster-key", required=True); c.add_argument("--mode", default="tauE_discrRU")
+    c.add_argument("--layer", default=None,
+                   help="layer holding log-normalized expression for the specificity factors; default: .X, "
+                        "log-normalized here when it holds raw counts")
+    c.add_argument("--out-prefix", required=True); c.set_defaults(fn=_cmd_composite)
+    s = sub.add_parser("score-set")
+    s.add_argument("--h5ad", required=True); s.add_argument("--encoder", required=True,
+                   choices=ENCODERS); s.add_argument("--model", default=None)
+    s.add_argument("--cluster-key", required=True); s.add_argument("--gene-sets", required=True)
+    s.add_argument("--reference", default="rest"); s.add_argument("--composites", default="bare,tauE_discrRU")
+    s.add_argument("--out", required=True); s.set_defaults(fn=_cmd_score_set)
+    sc = sub.add_parser("score-cells")
+    sc.add_argument("--h5ad", required=True); sc.add_argument("--encoder", required=True,
+                    choices=ENCODERS); sc.add_argument("--model", default=None)
+    sc.add_argument("--cluster-key", required=True); sc.add_argument("--gene-sets", required=True,
+                    help="JSON {state: [genes]} -- one curated panel per candidate state")
+    sc.add_argument("--reference", default="rest"); sc.add_argument("--calibrate", default="zscore",
+                    choices=["none", "zscore", "rank"], help="per-state rescale for the argmax (default zscore)")
+    sc.add_argument("--centroid", default="mean_lognorm", choices=["mean_lognorm", "pseudobulk"],
+                    help="reference-centroid recipe; default 'mean_lognorm' (mean of per-cell lognorm); "
+                         "'pseudobulk' pools counts before the log (opt-in)")
+    sc.add_argument("--out", required=True); sc.set_defaults(fn=_cmd_score_cells)
+    return p
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    return args.fn(args)

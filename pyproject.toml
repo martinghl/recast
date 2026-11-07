@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sc-recast"
+version = "0.8.2"
+description = "Reference-Conditioned Attribution of Single-cell Transcriptomes: genes that define a target-vs-reference cell state."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Guanghao Li" }, { name = "Chia-Hao Tung" }, { name = "Gang Qu" }]
+keywords = ["single-cell", "scRNA-seq", "attribution", "integrated-gradients", "foundation-model",
+            "contrastive", "cell-state", "marker-genes", "bioinformatics"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = ["numpy", "scipy", "pandas", "anndata"]
+
+[project.optional-dependencies]
+attribution = ["torch", "captum", "scimilarity", "scvi-tools"]
+dev = ["pytest"]
+
+[project.scripts]
+recast = "recast.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/martinghl/recast"
+Documentation = "https://github.com/martinghl/recast/tree/main/docs"
+Repository = "https://github.com/martinghl/recast"
+Issues = "https://github.com/martinghl/recast/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["recast*"]

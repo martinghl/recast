@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use RECAST, please cite it as below."
+title: "RECAST: reference-conditioned attribution of single-cell transcriptomes"
+abstract: >-
+  RECAST ranks the genes that distinguish a target cell population from a
+  user-chosen reference population. It runs Integrated Gradients on a
+  pretrained single-cell encoder along the path from the reference
+  mean-expression profile to the target profile, and attributes the projected
+  encoder-output change to individual genes. The same attributions score
+  curated gene programs in new cells. The package provides adapters for
+  SCimilarity, SSL (scTab, PBMC), scFoundation and scVI encoders, a
+  command-line interface and a single-file script.
+type: software
+version: "0.8.2"
+date-released: "2026-11-06"
+authors:
+  - given-names: Guanghao
+    family-names: Li
+    affiliation: "Center for Precision Health, McWilliams School of Biomedical Informatics, The University of Texas Health Science Center at Houston"
+  - given-names: Chia-Hao
+    family-names: Tung
+    affiliation: "Center for Precision Health, McWilliams School of Biomedical Informatics, The University of Texas Health Science Center at Houston"
+  - given-names: Gang
+    family-names: Qu
+    affiliation: "Center for Precision Health, McWilliams School of Biomedical Informatics, The University of Texas Health Science Center at Houston"
+license: MIT
+repository-code: "https://github.com/martinghl/recast"
+keywords:
+  - single-cell
+  - scRNA-seq
+  - attribution
+  - integrated-gradients
+  - foundation-model
+  - marker-genes
+  - bioinformatics

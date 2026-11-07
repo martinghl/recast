@@ -1,0 +1,8 @@
+# Docs-build dependencies ONLY. The tutorial notebooks are committed with their outputs and are
+# never executed at build time (conf.py: nb_execution_mode = "off"), so nothing here needs torch,
+# scimilarity, anndata or a GPU -- sphinx only has to render stored cells.
+sphinx>=8
+myst-nb>=1.2
+furo
+sphinx-copybutton
+sphinx-design

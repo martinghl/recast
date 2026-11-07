@@ -1,0 +1,91 @@
+import numpy as np, anndata as ad
+from recast.encoders import StubEncoder
+from recast.attribution import attribute
+
+def _leak_fixture():
+    """3 genes, target T vs reference R: 'driver' is genuinely up in T (dC>0, phi>0) -- an honest
+    marker. 'leak' has POSITIVE attribution (phi>0) but is actually DOWN in T vs R (dC<0) -- the
+    exact sign mismatch the dC>0 gate excludes (a down-regulated gene let in because IG's own
+    sign disagrees with the pseudobulk direction). 'filler' is the mirror case (phi<0, dC>0) that
+    makes the flip visible in the ranking: under gate='dC' it's kept (ranked ahead of 'leak'); under
+    gate='phi' it's dropped (ranked behind 'leak'). Counts/seed fixed by grid search over the real
+    StubEncoder+IG pipeline (baseline='reference'); identical across repeated runs (deterministic:
+    no dropout, fixed n_steps IG, CPU)."""
+    rng = np.random.default_rng(23)
+    nT, nR = 25, 25
+    T = np.c_[rng.poisson(40, nT), rng.poisson(8, nT), rng.poisson(2, nT)]
+    R = np.c_[rng.poisson(1, nR), rng.poisson(100, nR), rng.poisson(3, nR)]
+    X = np.vstack([T, R]).astype("float32")
+    A = ad.AnnData(X)
+    A.var_names = ["driver", "leak", "filler"]
+    A.obs["state"] = ["T"] * nT + ["R"] * nR
+    return A
+
+def test_gate_dC_excludes_sign_mismatched_gene_but_phi_includes_it():
+    """Pins what the dC>0 default excludes: 'leak' has phi>0 (positive IG attribution) but
+    dC<0 (it is NOT actually up-regulated in T vs R) -- gate='dC' must exclude it (ranked last,
+    behind the dC>0-but-phi<0 'filler' gene), while gate='phi' includes it (ranked ahead
+    of 'filler', on its raw attribution sign alone).
+
+    The gate rule under test is centroid-independent (`np.where(gate_vals>0, att, -inf)`), but this
+    fixture's exact dC/phi magnitudes for the auxiliary 'filler' gene were grid-searched against the
+    pseudobulk centroid, so both calls pin centroid='pseudobulk' to keep the documented ranking. (The
+    default mean_lognorm centroid is covered by test_default_centroid_is_mean_lognorm.)"""
+    A = _leak_fixture(); enc = StubEncoder(3)
+    res_dC = attribute(enc, A, "state", target="T", reference="siblings", device="cpu",
+                       baseline="reference", gate="dC", centroid="pseudobulk")
+    res_phi = attribute(enc, A, "state", target="T", reference="siblings", device="cpu",
+                        baseline="reference", gate="phi", centroid="pseudobulk")
+
+    # pin the underlying sign mismatch this test relies on
+    assert res_dC.attribution["T"]["leak"] > 0                 # phi>0 ...
+    assert res_dC.dC["T"]["leak"] < 0                          # ... but dC<0 (genuinely down-regulated)
+    assert res_dC.dC["T"]["driver"] > 0 and res_dC.attribution["T"]["driver"] > 0   # honest marker
+
+    # default gate="dC": leak is gated out -> ranked last (dC<=0 always sorts behind dC>0 genes,
+    # regardless of leak's own positive phi)
+    assert res_dC.genes["T"] == ["driver", "filler", "leak"]
+    assert res_dC.genes["T"][-1] == "leak"
+
+    # gate="phi": leak's own positive phi ranks it ahead of filler (phi<0) -- the leak
+    assert res_phi.genes["T"] == ["driver", "leak", "filler"]
+    assert "leak" in res_phi.genes["T"][:2]
+
+def test_gate_phi_ranks_by_the_attribution_sign():
+    """gate='phi' must rank EXACTLY by np.argsort(-np.where(att>0, att, -inf)) (the default rule
+    before 0.2.0), i.e. gate purely on the attribution's own sign,
+    ignoring dC entirely -- even though this AttributionResult carries a real dC (attribute()
+    always computes it now)."""
+    A = _leak_fixture(); enc = StubEncoder(3)
+    res = attribute(enc, A, "state", target="T", reference="siblings", device="cpu",
+                    baseline="reference", gate="phi")
+    att = res.attribution["T"].to_numpy()
+    genes = list(res.attribution.index)
+    phi_order = np.argsort(-np.where(att > 0, att, -np.inf))
+    phi_ranked = [genes[j] for j in phi_order]
+    assert res.genes["T"] == phi_ranked
+    assert res.dC is not None   # dC is still populated/available even when gate="phi" doesn't use it
+
+def test_bad_gate_raises():
+    import pytest
+    A = _leak_fixture(); enc = StubEncoder(3)
+    with pytest.raises(ValueError):
+        attribute(enc, A, "state", target="T", reference="siblings", device="cpu", gate="bogus")
+
+def test_attribute_ranks_planted_marker():
+    # G0 is the S1-vs-S2 discriminator; G2 is ubiquitous background.
+    rng = np.random.default_rng(0)
+    S1 = np.c_[rng.poisson(8, 30), rng.poisson(1, 30), rng.poisson(5, 30)]
+    S2 = np.c_[rng.poisson(1, 30), rng.poisson(8, 30), rng.poisson(5, 30)]
+    X = np.vstack([S1, S2]).astype("float32")
+    A = ad.AnnData(X); A.var_names = ["G0", "G1", "G2"]; A.obs["state"] = ["S1"] * 30 + ["S2"] * 30
+    res = attribute(StubEncoder(3), A, "state", target="S1", reference="siblings", device="cpu")
+    ranked = res.genes["S1"]
+    assert ranked.index("G0") < ranked.index("G2")          # marker beats background
+    assert set(res.attribution.columns) == {"S1"}
+
+def test_attribute_all_states():
+    X = np.abs(np.random.default_rng(1).normal(5, 1, (20, 4))).astype("float32")
+    A = ad.AnnData(X); A.var_names = [f"G{i}" for i in range(4)]; A.obs["state"] = ["A"] * 10 + ["B"] * 10
+    res = attribute(StubEncoder(4), A, "state", device="cpu")
+    assert set(res.genes) == {"A", "B"}
